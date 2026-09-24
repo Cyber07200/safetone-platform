@@ -1,0 +1,39 @@
+@import "@fontsource-variable/inter";
+@import "@fontsource-variable/jetbrains-mono";
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html { -webkit-font-smoothing: antialiased; text-rendering: optimizeLegibility; }
+  body { @apply bg-white text-ink-900 font-sans; font-feature-settings: "cv11", "ss01"; }
+  ::selection { @apply bg-brand-100 text-brand-900; }
+  :focus-visible { @apply outline-none ring-2 ring-brand-500/60 ring-offset-2 ring-offset-white; }
+}
+
+@layer components {
+  .container-page { @apply mx-auto w-full max-w-[1200px] px-4 sm:px-6 lg:px-8; }
+  .card { @apply rounded-xl2 border border-ink-200/80 bg-white shadow-card; }
+  .label-mono { @apply font-mono text-[11px] uppercase tracking-[0.08em] text-ink-500; }
+  .field { @apply w-full rounded-lg border border-ink-200 bg-white px-3 py-2 text-[14px] text-ink-900 placeholder:text-ink-400 transition focus:border-brand-500 focus:outline-none focus:ring-4 focus:ring-brand-100; }
+  .hairline { @apply border-ink-200/80; }
+  .grid-bg {
+    background-image: linear-gradient(to right, rgba(24,70,216,.06) 1px, transparent 1px),
+      linear-gradient(to bottom, rgba(24,70,216,.06) 1px, transparent 1px);
+    background-size: 32px 32px;
+  }
+  .mark-del { @apply rounded-[3px] bg-bad-100 text-bad-700 line-through decoration-bad-600/60; }
+  .mark-add { @apply rounded-[3px] bg-ok-100 text-ok-700; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; transition-duration: 0.01ms !important; scroll-behavior: auto !important; }
+}
+
+.skeleton { position: relative; overflow: hidden; background: #ECEFF4; border-radius: 6px; }
+.skeleton::after { content: ""; position: absolute; inset: 0; transform: translateX(-100%);
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,.7), transparent); animation: shimmer 1.3s infinite; }
+@keyframes shimmer { 100% { transform: translateX(100%); } }
+@keyframes pulse-dot { 0%, 100% { opacity: 1; } 50% { opacity: .35; } }
+.pulse-dot { animation: pulse-dot 1.2s ease-in-out infinite; }
