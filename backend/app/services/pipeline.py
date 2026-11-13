@@ -56,17 +56,20 @@ class _StageTracker:
         self.db, self.run = db, run
         self._t0: dict[str, float] = {}
 
-    def _set(self, key: str, **kw) -> None:
+    def _set(self, key: str, *, persist: bool = True, **kw) -> None:
         stages = [dict(s) for s in self.run.stages]
         for s in stages:
             if s["key"] == key:
                 s.update(kw)
         self.run.stages = stages
-        self.db.commit()
+        if persist:
+            self.db.commit()
 
-    def start(self, key: str, method: str | None = None) -> None:
+    def start(self, key: str, method: str | None = None, *, slow: bool = False) -> None:
+        # Each commit is a network round trip to the database (~0.5 s to a remote Postgres): a "running"
+        # state is written only before slow work (a GigaChat call); local stages take milliseconds.
         self._t0[key] = time.perf_counter()
-        self._set(key, status="running", method=method, started_at=_now().isoformat())
+        self._set(key, persist=slow, status="running", method=method, started_at=_now().isoformat())
 
     def done(self, key: str, summary: str, *, method: str | None = None, warnings: list[str] | None = None,
              status: str = "completed") -> None:
@@ -180,7 +183,7 @@ async def _execute(db: Session, run: ProcessingRun, router: AIRouter) -> None:
                     method="user_provided")
             run.provider, run.model = None, None
         else:
-            tr.start(current, "llm")
+            tr.start(current, "llm", slow=True)
             sources = None
             if docs_to_llm:
                 hits = retrieval.search(db, bank_id=run.bank_id, product_id=run.product_id, query=run.question, top_k=5)
@@ -222,7 +225,7 @@ async def _execute(db: Session, run: ProcessingRun, router: AIRouter) -> None:
         # 4. LEGAL VERIFICATION -------------------------------------------
         current = "legal_verification"
         method = "deterministic evidence engine"
-        tr.start(current, method)
+        tr.start(current, method, slow=run.mode == "live" and docs_to_llm)
         v_warn: list[str] = []
         if run.mode == "live" and substantive:
             if not docs_to_llm:
@@ -269,7 +272,7 @@ async def _execute(db: Session, run: ProcessingRun, router: AIRouter) -> None:
         # 6-7. LINGUISTIC + SEMANTIC --------------------------------------
         current = "linguistic_rewrite"
         tone = run.tone if run.tone in TONES else "neutral"
-        tr.start(current)
+        tr.start(current, slow=run.mode == "live")
         candidate, ling_method, ling_changes, l_warn = None, None, [], []
         attempts_log = []
         if run.mode == "live":

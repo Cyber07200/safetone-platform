@@ -12,23 +12,23 @@ ROOT = Path(__file__).resolve().parents[2]
 
 def test_redact_auth_headers():
     assert "[REDACTED]" in redact("Authorization: Api-Key fake-test-key-not-real-0000000000000000")
-    assert "AQVN3T06I" not in redact("key=fake-test-key-not-real-0000000000000000")
     assert "abc.def" not in redact("Bearer abc.def")
-    assert "sk-abcdefghijk" not in redact("token sk-abcdefghijklmnop")
+    assert "dGVzdC1pZDp0" not in redact("Authorization: Basic dGVzdC1pZDp0ZXN0LXNlY3JldA==")
+    assert "s3cr3t" not in redact("postgresql+psycopg://postgres.ref:s3cr3t-pass@host:5432/postgres")
 
 
 def test_log_filter_masks_records(caplog):
     logger = logging.getLogger("safetone.test")
     logger.addFilter(SecretMaskingFilter())
     with caplog.at_level(logging.INFO):
-        logger.info("calling with Api-Key %s", "AQVNsupersecretvalue123")
+        logger.info("calling with Bearer %s and %s", "supersecrettoken123",
+                    "postgresql+psycopg://postgres.ref:supersecretdbpass@host:5432/postgres")
     assert "supersecret" not in caplog.text
 
 
 def test_env_example_has_no_secret_values():
     text = (ROOT / "backend" / ".env.example").read_text("utf-8")
-    for name in ("YANDEX_API_KEY", "YANDEX_IAM_TOKEN", "GIGACHAT_AUTH_KEY", "GIGACHAT_CLIENT_SECRET",
-                 "OPENAI_API_KEY"):
+    for name in ("GIGACHAT_AUTH_KEY", "GIGACHAT_CLIENT_SECRET", "CHAT_ENCRYPTION_KEY"):
         m = re.search(rf"^{name}=(.*)$", text, re.M)
         assert m is not None and m.group(1).strip() == "", name
 

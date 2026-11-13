@@ -1,10 +1,10 @@
 import { Link } from "react-router-dom";
-import { Button, EmptyState } from "../components/ui";
+import { EmptyState, buttonClass } from "../components/ui";
 
 export default function NotFound() {
   return (
     <div className="mx-auto max-w-lg p-10">
-      <EmptyState title="Страница не найдена" description="Проверьте адрес или вернитесь в кабинет." action={<Link to="/app"><Button size="sm">В кабинет</Button></Link>} />
+      <EmptyState title="Страница не найдена" description="Проверьте адрес или вернитесь в кабинет." action={<Link to="/app" className={buttonClass("primary", "sm")}>В кабинет</Link>} />
     </div>
   );
 }

@@ -1,32 +1,50 @@
-import { forwardRef, type ButtonHTMLAttributes, type ReactNode } from "react";
+import { forwardRef, useEffect, useRef, useState, type ButtonHTMLAttributes, type ReactNode } from "react";
 import clsx from "clsx";
-import { motion, useReducedMotion } from "framer-motion";
+import { animate, motion, useInView, useReducedMotion, useScroll, useTransform, type MotionValue } from "framer-motion";
 import { AlertTriangle, Inbox, Loader2, RefreshCw } from "lucide-react";
 import type { Tone3 } from "../../lib/labels";
 import { ACTUALITY, CLAIM, RESULT, RISK } from "../../lib/labels";
 import type { Actuality, ClaimStatus, ResultStatus, Risk } from "../../types/api";
 import { ApiError } from "../../services/api";
 
+export const EASE = [0.16, 1, 0.3, 1] as const;
+
 /* ---------- Button ---------- */
 type Variant = "primary" | "secondary" | "ghost" | "danger";
-interface BtnProps extends ButtonHTMLAttributes<HTMLButtonElement> { variant?: Variant; size?: "sm" | "md" | "lg"; loading?: boolean; icon?: ReactNode }
+type Size = "sm" | "md" | "lg";
+/** Button styles, also usable on <Link>/<a> so links are not wrapped around <button>. */
+export const buttonClass = (variant: Variant = "primary", size: Size = "md", className?: string) => clsx(
+  "group inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-full font-medium tracking-[-0.01em] transition-all duration-200 ease-apple disabled:cursor-not-allowed disabled:opacity-40 active:scale-[.97]",
+  { sm: "h-8 px-3.5 text-[13px]", md: "h-10 px-5 text-[14px]", lg: "h-12 px-6 text-[16px]" }[size],
+  {
+    primary: "bg-brand-600 text-white hover:bg-brand-500 hover:shadow-[0_8px_24px_-8px_rgba(0,113,227,.6)]",
+    secondary: "bg-ink-50 text-ink-900 ring-1 ring-inset ring-black/[.06] hover:bg-ink-100",
+    ghost: "text-brand-700 hover:bg-brand-50",
+    danger: "bg-bad-50 text-bad-700 ring-1 ring-inset ring-bad-600/15 hover:bg-bad-100",
+  }[variant], className);
+
+interface BtnProps extends ButtonHTMLAttributes<HTMLButtonElement> { variant?: Variant; size?: Size; loading?: boolean; icon?: ReactNode }
 export const Button = forwardRef<HTMLButtonElement, BtnProps>(function Button(
   { variant = "primary", size = "md", loading, icon, className, children, disabled, ...rest }, ref) {
   return (
-    <button ref={ref} disabled={disabled || loading} className={clsx(
-      "inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-lg font-medium transition-all duration-150 disabled:cursor-not-allowed disabled:opacity-50 active:scale-[.98]",
-      { sm: "h-8 px-3 text-[13px]", md: "h-10 px-4 text-[14px]", lg: "h-12 px-5 text-[15px]" }[size],
-      {
-        primary: "bg-brand-600 text-white shadow-[0_1px_0_rgba(255,255,255,.15)_inset,0_1px_2px_rgba(10,42,140,.3)] hover:bg-brand-700",
-        secondary: "border border-ink-200 bg-white text-ink-800 hover:border-ink-300 hover:bg-ink-50",
-        ghost: "text-ink-700 hover:bg-ink-100",
-        danger: "border border-bad-100 bg-bad-50 text-bad-700 hover:bg-bad-100",
-      }[variant], className)} {...rest}>
+    <button ref={ref} disabled={disabled || loading} aria-busy={loading || undefined} className={buttonClass(variant, size, className)} {...rest}>
       {loading ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden /> : icon}
       {children}
     </button>
   );
 });
+
+/** Closes overlays on Escape and locks page scroll while open. */
+export function useDismiss(open: boolean, onClose: () => void) {
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    window.addEventListener("keydown", onKey);
+    return () => { window.removeEventListener("keydown", onKey); document.body.style.overflow = prev; };
+  }, [open, onClose]);
+}
 
 /* ---------- Badges ---------- */
 const toneCls: Record<Tone3, string> = {
@@ -40,7 +58,7 @@ const dotCls: Record<Tone3, string> = { ok: "bg-ok-600", warn: "bg-warn-600", ba
 
 export function Badge({ tone = "muted", children, dot, mono, className, title }: { tone?: Tone3; children: ReactNode; dot?: boolean; mono?: boolean; className?: string; title?: string }) {
   return (
-    <span title={title} className={clsx("inline-flex items-center gap-1.5 rounded-md px-2 py-0.5 text-[12px] font-medium ring-1 ring-inset", toneCls[tone], mono && "font-mono text-[11px] tracking-wide", className)}>
+    <span title={title} className={clsx("inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-[12px] font-medium ring-1 ring-inset", toneCls[tone], mono && "font-mono text-[11px] tracking-wide", className)}>
       {dot && <span className={clsx("h-1.5 w-1.5 rounded-full", dotCls[tone])} />}
       {children}
     </span>
@@ -61,11 +79,11 @@ export function Card({ className, children, ...rest }: { className?: string; chi
 
 export function PageHeader({ eyebrow, title, description, actions }: { eyebrow?: string; title: string; description?: ReactNode; actions?: ReactNode }) {
   return (
-    <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+    <div className="mb-8 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
       <div>
-        {eyebrow && <div className="label-mono mb-1.5">{eyebrow}</div>}
-        <h1 className="text-[24px] font-semibold tracking-[-0.02em] text-ink-950 sm:text-[28px]">{title}</h1>
-        {description && <p className="mt-1.5 max-w-2xl text-[14px] leading-relaxed text-ink-600">{description}</p>}
+        {eyebrow && <div className="mb-1 text-[13px] font-semibold text-brand-700">{eyebrow}</div>}
+        <h1 className="text-[28px] font-semibold tracking-[-0.03em] text-ink-950 sm:text-[34px]">{title}</h1>
+        {description && <p className="mt-2 max-w-2xl text-[15px] leading-relaxed text-ink-600">{description}</p>}
       </div>
       {actions && <div className="flex shrink-0 flex-wrap gap-2">{actions}</div>}
     </div>
@@ -74,14 +92,14 @@ export function PageHeader({ eyebrow, title, description, actions }: { eyebrow?:
 
 export function Segmented<T extends string>({ value, onChange, options, ariaLabel, size = "md" }: { value: T; onChange: (v: T) => void; options: { value: T; label: ReactNode; disabled?: boolean; title?: string }[]; ariaLabel: string; size?: "sm" | "md" }) {
   return (
-    <div role="radiogroup" aria-label={ariaLabel} className="inline-flex w-full rounded-lg bg-ink-100 p-1">
+    <div role="radiogroup" aria-label={ariaLabel} className="inline-flex w-full rounded-full bg-ink-100/80 p-1">
       {options.map((o) => (
         <button key={o.value} type="button" role="radio" aria-checked={value === o.value} disabled={o.disabled} title={o.title}
           onClick={() => onChange(o.value)}
-          className={clsx("relative flex-1 rounded-md font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-40",
+          className={clsx("relative flex-1 rounded-full font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-40",
             size === "sm" ? "px-2 py-1 text-[12px]" : "px-3 py-1.5 text-[13px]",
             value === o.value ? "text-ink-950" : "text-ink-600 hover:text-ink-900")}>
-          {value === o.value && <motion.span layoutId={`seg-${ariaLabel}`} className="absolute inset-0 rounded-md bg-white shadow-card" transition={{ type: "spring", stiffness: 500, damping: 38 }} />}
+          {value === o.value && <motion.span layoutId={`seg-${ariaLabel}`} className="absolute inset-0 rounded-full bg-white shadow-[0_1px_3px_rgba(0,0,0,.1),0_3px_8px_rgba(0,0,0,.06)]" transition={{ type: "spring", stiffness: 420, damping: 34 }} />}
           <span className="relative">{o.label}</span>
         </button>
       ))}
@@ -102,8 +120,8 @@ export function Field({ label, hint, children, htmlFor }: { label: string; hint?
 export function Toggle({ checked, onChange, label, id }: { checked: boolean; onChange: (v: boolean) => void; label: string; id?: string }) {
   return (
     <button id={id} type="button" role="switch" aria-checked={checked} aria-label={label} onClick={() => onChange(!checked)}
-      className={clsx("relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors", checked ? "bg-brand-600" : "bg-ink-300")}>
-      <span className={clsx("inline-block h-5 w-5 rounded-full bg-white shadow transition-transform", checked ? "translate-x-5" : "translate-x-0.5")} />
+      className={clsx("relative inline-flex h-[30px] w-[51px] shrink-0 items-center rounded-full transition-colors duration-300 ease-apple", checked ? "bg-ok-600" : "bg-ink-200")}>
+      <span className={clsx("inline-block h-[26px] w-[26px] rounded-full bg-white shadow-[0_3px_8px_rgba(0,0,0,.15),0_1px_1px_rgba(0,0,0,.16)] transition-transform duration-300 ease-apple", checked ? "translate-x-[23px]" : "translate-x-[2px]")} />
     </button>
   );
 }
@@ -121,7 +139,7 @@ export function SkeletonRows({ rows = 4 }: { rows?: number }) {
 
 export function EmptyState({ title, description, action, icon }: { title: string; description?: ReactNode; action?: ReactNode; icon?: ReactNode }) {
   return (
-    <div className="flex flex-col items-center justify-center rounded-xl2 border border-dashed border-ink-200 bg-ink-50/50 px-6 py-12 text-center">
+    <div className="flex flex-col items-center justify-center rounded-xl2 bg-ink-50 px-6 py-14 text-center">
       <div className="mb-3 grid h-10 w-10 place-items-center rounded-full bg-white text-ink-400 shadow-card">{icon ?? <Inbox className="h-5 w-5" />}</div>
       <div className="text-[15px] font-semibold text-ink-900">{title}</div>
       {description && <p className="mt-1 max-w-md text-[13px] text-ink-600">{description}</p>}
@@ -146,22 +164,60 @@ export function ErrorState({ error, onRetry }: { error: unknown; onRetry?: () =>
 }
 
 /* ---------- Motion ---------- */
-export function FadeIn({ children, delay = 0, className, y = 8 }: { children: ReactNode; delay?: number; className?: string; y?: number }) {
+export function FadeIn({ children, delay = 0, className, y = 10 }: { children: ReactNode; delay?: number; className?: string; y?: number }) {
   const reduce = useReducedMotion();
   return (
-    <motion.div className={className} initial={reduce ? false : { opacity: 0, y }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.35, delay, ease: [0.2, 0.7, 0.2, 1] }}>
+    <motion.div className={className} initial={reduce ? false : { opacity: 0, y }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.6, delay, ease: EASE }}>
       {children}
     </motion.div>
   );
 }
 
-export function Reveal({ children, className, delay = 0 }: { children: ReactNode; className?: string; delay?: number }) {
+/** Scroll-reveal props (fade + rise + slight blur) for any motion element, e.g. staggered list items. */
+export const reveal = (reduce: boolean | null, delay = 0, y = 28) => ({
+  initial: reduce ? false : { opacity: 0, y, filter: "blur(6px)" },
+  whileInView: { opacity: 1, y: 0, filter: "blur(0px)" },
+  viewport: { once: true, margin: "-80px" },
+  transition: { duration: 0.9, delay, ease: EASE },
+}) as const;
+
+/** Scroll reveal: fade + rise + slight blur, Apple product-page style. */
+export function Reveal({ children, className, delay = 0, y = 28 }: { children: ReactNode; className?: string; delay?: number; y?: number }) {
   const reduce = useReducedMotion();
+  return <motion.div className={className} {...reveal(reduce, delay, y)}>{children}</motion.div>;
+}
+
+/** Number that counts up from 0 the first time it scrolls into view. */
+export function CountUp({ value, className }: { value: number; className?: string }) {
+  const ref = useRef<HTMLSpanElement>(null);
+  const reduce = useReducedMotion();
+  const inView = useInView(ref, { once: true });
+  const [n, setN] = useState(reduce ? value : 0);
+  useEffect(() => {
+    if (reduce) { setN(value); return; }
+    if (!inView) return;
+    const c = animate(0, value, { duration: 1.2, ease: EASE, onUpdate: (v) => setN(Math.round(v)) });
+    return () => c.stop();
+  }, [value, inView, reduce]);
+  return <span ref={ref} className={className}>{n}</span>;
+}
+
+/** Statement whose words light up one by one while it scrolls through the viewport. */
+export function ScrollText({ text, className }: { text: string; className?: string }) {
+  const ref = useRef<HTMLParagraphElement>(null);
+  const reduce = useReducedMotion();
+  const { scrollYProgress } = useScroll({ target: ref, offset: ["start 85%", "end 45%"] });
+  const words = text.split(" ");
+  if (reduce) return <p className={className}>{text}</p>;
   return (
-    <motion.div className={className} initial={reduce ? false : { opacity: 0, y: 14 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true, margin: "-60px" }} transition={{ duration: 0.5, delay, ease: [0.2, 0.7, 0.2, 1] }}>
-      {children}
-    </motion.div>
+    <p ref={ref} className={className}>
+      {words.map((w, i) => <Word key={i} p={scrollYProgress} range={[i / words.length, (i + 1) / words.length]}>{w}</Word>)}
+    </p>
   );
+}
+function Word({ children, p, range }: { children: string; p: MotionValue<number>; range: [number, number] }) {
+  const opacity = useTransform(p, range, [0.18, 1]);
+  return <><motion.span style={{ opacity }}>{children}</motion.span>{" "}</>;
 }
 
 /* ---------- Logo ---------- */
@@ -169,7 +225,7 @@ export function Logo({ className, compact }: { className?: string; compact?: boo
   return (
     <span className={clsx("inline-flex items-center gap-2", className)}>
       <svg viewBox="0 0 32 32" className="h-7 w-7" aria-hidden>
-        <rect width="32" height="32" rx="8" fill="#1846D8" />
+        <rect width="32" height="32" rx="9" fill="#0071E3" />
         <path d="M16 6l8 3v6c0 5-3.4 9.3-8 11-4.6-1.7-8-6-8-11V9l8-3z" fill="none" stroke="#fff" strokeWidth="2.2" strokeLinejoin="round" />
         <path d="M12 16l3 3 5-6" fill="none" stroke="#fff" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" />
       </svg>

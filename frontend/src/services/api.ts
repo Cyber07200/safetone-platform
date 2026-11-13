@@ -1,7 +1,8 @@
 import type {
   Bank, DocumentDetail, DocumentItem, Health, HistoryPage, ProcessInput, Product, ProvidersView, RunDetail,
-  Scenario, SettingsView, Stats, BankSettings,
+  Scenario, SettingsView, Stats, BankSettings, ChatConversation, ChatConversationDetail, ChatSendResponse, Mode,
 } from "../types/api";
+import { chatOwner } from "../lib/chatOwner";
 
 export class ApiError extends Error {
   constructor(public status: number, public code: string, message: string, public details?: unknown) {
@@ -40,7 +41,16 @@ const json = (method: string, data: unknown): RequestInit => ({
   method, headers: { "Content-Type": "application/json" }, body: JSON.stringify(data),
 });
 
+const owned = (init: RequestInit = {}): RequestInit => ({ ...init, headers: { ...init.headers, "X-Chat-Owner": chatOwner() } });
+
 export const api = {
+  chats: (bank_id: string) => request<ChatConversation[]>("/api/v1/chat/conversations", { ...owned(), query: { bank_id } }),
+  chat: (id: string) => request<ChatConversationDetail>(`/api/v1/chat/conversations/${id}`, owned()),
+  sendChat: (data: { bank_id: string; conversation_id?: string | null; content: string; mode?: Mode }) =>
+    request<ChatSendResponse>("/api/v1/chat/messages", owned(json("POST", data))),
+  sendChatDocument: (form: FormData) => request<ChatSendResponse>("/api/v1/chat/documents", owned({ method: "POST", body: form })),
+  renameChat: (id: string, title: string) => request<ChatConversation>(`/api/v1/chat/conversations/${id}`, owned(json("PATCH", { title }))),
+  deleteChat: (id: string) => request<void>(`/api/v1/chat/conversations/${id}`, owned({ method: "DELETE" })),
   health: () => request<Health>("/api/health"),
   banks: () => request<Bank[]>("/api/v1/banks"),
   products: (bank_id: string) => request<Product[]>("/api/v1/products", { query: { bank_id } }),

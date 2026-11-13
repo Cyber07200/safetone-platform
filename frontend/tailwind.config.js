@@ -4,21 +4,30 @@ export default {
   theme: {
     extend: {
       fontFamily: {
-        sans: ["'Inter Variable'", "Inter", "system-ui", "-apple-system", "Segoe UI", "sans-serif"],
-        mono: ["'JetBrains Mono Variable'", "ui-monospace", "SFMono-Regular", "Menlo", "monospace"],
+        // SF Pro on Apple devices, Inter everywhere else.
+        sans: ["-apple-system", "BlinkMacSystemFont", "'SF Pro Text'", "'Inter Variable'", "Inter", "system-ui", "Segoe UI", "sans-serif"],
+        display: ["-apple-system", "BlinkMacSystemFont", "'SF Pro Display'", "'Inter Variable'", "Inter", "system-ui", "sans-serif"],
+        mono: ["ui-monospace", "'SF Mono'", "'JetBrains Mono Variable'", "SFMono-Regular", "Menlo", "monospace"],
       },
       colors: {
-        ink: { 950: "#0B1220", 900: "#101A2E", 800: "#1B2740", 700: "#2E3B55", 600: "#4A5670", 500: "#667190", 400: "#8C95AD", 300: "#B7BECE", 200: "#DADFE8", 100: "#ECEFF4", 50: "#F5F7FA" },
-        brand: { 900: "#0A2A8C", 800: "#0F35AE", 700: "#1440CC", 600: "#1846D8", 500: "#2F5FEA", 400: "#5B82F2", 200: "#C9D7FC", 100: "#E5ECFE", 50: "#F2F6FF" },
-        ok: { 700: "#0B7A4B", 600: "#0E9259", 100: "#DDF4E8", 50: "#EFFAF4" },
-        warn: { 700: "#9A5B00", 600: "#B86E00", 100: "#FDEFD3", 50: "#FFF8EA" },
-        bad: { 700: "#B42318", 600: "#D92D20", 100: "#FDE3E1", 50: "#FEF3F2" },
+        // Apple-like neutrals: 950 = #1D1D1F text, 50 = #F5F5F7 surface.
+        ink: { 950: "#111113", 900: "#1D1D1F", 800: "#333336", 700: "#424245", 600: "#6E6E73", 500: "#6E6E73", 400: "#86868B", 300: "#C7C7CC", 200: "#D2D2D7", 100: "#E8E8ED", 50: "#F5F5F7" },
+        brand: { 900: "#003A7A", 800: "#004FA3", 700: "#0066CC", 600: "#0071E3", 500: "#0077ED", 400: "#2997FF", 200: "#B8DAFF", 100: "#DCEBFF", 50: "#EEF5FF" },
+        ok: { 700: "#1A7F37", 600: "#248A3D", 100: "#D7F2DE", 50: "#EEF9F1" },
+        warn: { 700: "#A35200", 600: "#C76A00", 100: "#FFEBCC", 50: "#FFF7EB" },
+        bad: { 700: "#C4221B", 600: "#E0281F", 100: "#FFE0DE", 50: "#FFF2F1" },
       },
       boxShadow: {
-        card: "0 1px 2px rgba(16,26,46,.04), 0 1px 1px rgba(16,26,46,.03)",
-        lift: "0 12px 32px -12px rgba(16,26,46,.18), 0 2px 6px rgba(16,26,46,.05)",
+        card: "0 1px 2px rgba(0,0,0,.04), 0 4px 16px -6px rgba(0,0,0,.06)",
+        lift: "0 24px 60px -24px rgba(0,0,0,.22), 0 4px 14px rgba(0,0,0,.05)",
+        glow: "0 30px 80px -30px rgba(0,113,227,.45)",
       },
-      borderRadius: { xl2: "14px" },
+      borderRadius: { xl2: "18px", "4xl": "28px" },
+      transitionTimingFunction: { apple: "cubic-bezier(0.16, 1, 0.3, 1)" },
+      keyframes: {
+        "fade-up": { from: { opacity: "0", transform: "translateY(12px)" }, to: { opacity: "1", transform: "none" } },
+      },
+      animation: { "fade-up": "fade-up .7s cubic-bezier(0.16,1,0.3,1) both" },
     },
   },
   plugins: [],

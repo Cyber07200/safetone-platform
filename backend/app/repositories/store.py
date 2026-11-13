@@ -142,3 +142,20 @@ def purge_expired_runs(db: Session) -> int:
         removed += res.rowcount or 0
     db.commit()
     return removed
+
+
+def fail_interrupted_runs(db: Session) -> int:
+    """Runs left queued/running by a server stop can never finish: mark them FAILED so clients stop polling."""
+    runs = list(db.scalars(select(ProcessingRun).where(ProcessingRun.execution_status.in_(("queued", "running")))))
+    now = datetime.now(timezone.utc)
+    for run in runs:
+        run.stages = [dict(s, status="skipped", summary="Не выполнялся: обработка прервана перезапуском сервера")
+                      if s.get("status") in ("pending", "running") else s for s in (run.stages or [])]
+        run.error = {"code": "INTERRUPTED", "message": "Обработка прервана перезапуском сервера. Запустите её повторно.",
+                     "stage": None}
+        run.execution_status = "failed"
+        run.result_status = "FAILED"
+        run.final_answer = None
+        run.finished_at = now
+    db.commit()
+    return len(runs)

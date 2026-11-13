@@ -10,7 +10,7 @@ from app.db.session import SessionLocal
 from app.models import BankSettings
 from app.services.ai.router import set_router
 from tests.conftest import process
-from tests.helpers import body, openai_response, openai_router
+from tests.helpers import body, chat_response, gigachat_router
 
 
 @pytest.fixture()
@@ -18,7 +18,7 @@ def live(request):
     routers = []
 
     def make(handler, **kw):
-        r, p = openai_router(handler, **kw)
+        r, p = gigachat_router(handler, **kw)
         set_router(r)
         routers.append(r)
         return r
@@ -26,15 +26,24 @@ def live(request):
     set_router(None)
 
 
+def _set_docs_to_llm(bank_id: str, flag: bool) -> None:
+    s = SessionLocal()
+    s.get(BankSettings, bank_id).allow_documents_to_llm = flag
+    s.commit()
+    s.close()
+
+
+@pytest.fixture(autouse=True)
+def documents_not_shared_by_default(bank_id):
+    # The demo bank allows it out of the box; these tests start from the conservative default.
+    _set_docs_to_llm(bank_id, False)
+    yield
+    _set_docs_to_llm(bank_id, True)
+
+
 @pytest.fixture()
 def docs_to_llm(bank_id):
-    def set_(flag: bool):
-        s = SessionLocal()
-        s.get(BankSettings, bank_id).allow_documents_to_llm = flag
-        s.commit()
-        s.close()
-    yield set_
-    set_(False)
+    yield lambda flag: _set_docs_to_llm(bank_id, flag)
 
 
 def _route(gen_text: str, verify: dict | str | None = None, rewrite: str | None = None, fail_on: str | None = None):
@@ -48,10 +57,10 @@ def _route(gen_text: str, verify: dict | str | None = None, rewrite: str | None 
         if fail_on == kind:
             return httpx.Response(503)
         if kind == "generate":
-            return openai_response(gen_text)
+            return chat_response(gen_text)
         if kind == "verify":
-            return openai_response(verify if isinstance(verify, str) else json.dumps(verify or {"claims": []}))
-        return openai_response(rewrite if rewrite is not None else b["messages"][1]["content"]
+            return chat_response(verify if isinstance(verify, str) else json.dumps(verify or {"claims": []}))
+        return chat_response(rewrite if rewrite is not None else b["messages"][1]["content"]
                                .split("\n", 1)[1].rsplit("\n", 1)[0])
     return handler, seen
 
@@ -61,13 +70,13 @@ def test_live_generation_is_verified_and_attributed(client, bank_id, products, l
                            rewrite="Ставка по покупкам — 29,9% годовых.")
     live(handler)
     d = process(client, bank_id, mode="live", question="Ставка по карте?",
-                product_id=products["card-horizon-120"]).json()
+                product_id=products["card-bereg-120"]).json()
     assert d["execution_status"] == "completed"
-    assert d["answer_origin"] == "provider" and d["provider"] == "openai" and d["model"] == "test-model"
+    assert d["answer_origin"] == "provider" and d["provider"] == "gigachat" and d["model"] == "GigaChat-test"
     assert d["original_answer"].startswith("Процентная ставка") and "19,9%" in d["original_answer"]
     assert "29,9%" in d["legal_answer"]
     assert d["final_answer"] == "Ставка по покупкам — 29,9% годовых."
-    assert d["linguistic"]["method"] == "llm:openai"
+    assert d["linguistic"]["method"] == "llm:gigachat"
     assert d["tokens_total"] == 84 and len(d["ai_calls"]) == 2
     assert not any("DEMO" in n for n in d["notices"])
     # bank documents were NOT sent (setting is off by default)
@@ -98,12 +107,12 @@ def test_meaning_changing_rewrite_is_rejected(client, bank_id, products, live):
     handler, _ = _route("Процентная ставка по операциям покупок — 29,9% годовых.",
                         rewrite="Ставка всего 9,9% — одобрим гарантированно!")
     live(handler)
-    d = process(client, bank_id, mode="live", question="Ставка?", product_id=products["card-horizon-120"]).json()
+    d = process(client, bank_id, mode="live", question="Ставка?", product_id=products["card-bereg-120"]).json()
     assert d["result_status"] == "READY"
     assert "9,9%" not in d["final_answer"].replace("29,9%", "")
     assert d["semantic_check"]["passed"] is True
     assert d["semantic_check"]["fallback"] in ("offline_rewriter", "legal_text")
-    assert d["semantic_check"]["attempts"][0] == {"method": "llm:openai", "passed": False}
+    assert d["semantic_check"]["attempts"][0] == {"method": "llm:gigachat", "passed": False}
 
 
 def test_rewrite_failure_falls_back_to_offline_editor(client, bank_id, products, live):
@@ -123,7 +132,7 @@ def test_llm_verification_with_documents_enabled(client, bank_id, products, live
     handler, seen = _route("Баланс можно узнать в банкомате банка через пункт «Баланс».", verify=verify)
     live(handler)
     d = process(client, bank_id, mode="live", question="Как узнать баланс?",
-                product_id=products["card-horizon-120"]).json()
+                product_id=products["card-bereg-120"]).json()
     kinds = [k for k, _ in seen]
     assert kinds[:2] == ["generate", "verify"]
     ver_body = next(b for k, b in seen if k == "verify")["messages"]
@@ -139,7 +148,7 @@ def test_invalid_llm_quote_is_not_trusted(client, bank_id, products, live, docs_
                           "quote": "Ставка 5% годовых гарантирована всем", "explanation": "выдумано"}]}
     handler, _ = _route("Процентная ставка по операциям покупок — 5% годовых.", verify=verify)
     live(handler)
-    d = process(client, bank_id, mode="live", question="Ставка?", product_id=products["card-horizon-120"]).json()
+    d = process(client, bank_id, mode="live", question="Ставка?", product_id=products["card-bereg-120"]).json()
     c1 = d["claims"][0]
     assert c1["status"] == "CONTRADICTED"               # deterministic evidence wins
     assert any("отклонён" in n for n in c1["notes"])

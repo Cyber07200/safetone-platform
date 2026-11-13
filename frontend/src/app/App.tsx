@@ -10,6 +10,7 @@ import NotFound from "../pages/NotFound";
 
 const Overview = lazy(() => import("../pages/Overview"));
 const Workspace = lazy(() => import("../pages/Workspace"));
+const Chat = lazy(() => import("../pages/Chat"));
 const History = lazy(() => import("../pages/History"));
 const AuditPage = lazy(() => import("../pages/AuditPage"));
 const KnowledgeBase = lazy(() => import("../pages/KnowledgeBase"));
@@ -31,6 +32,8 @@ export function AppRoutes() {
         <Route path="/" element={<Landing />} />
         <Route path="/app" element={<AppLayout />}>
           <Route index element={<Overview />} />
+          <Route path="chat" element={<Chat />} />
+          <Route path="chat/:id" element={<Chat />} />
           <Route path="workspace" element={<Workspace />} />
           <Route path="history" element={<History />} />
           <Route path="runs/:id" element={<AuditPage />} />
@@ -51,7 +54,7 @@ export default function App() {
     <QueryClientProvider client={client}>
       <MotionConfig reducedMotion="user">
         <BankProvider>
-          <BrowserRouter><AppRoutes /></BrowserRouter>
+          <BrowserRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}><AppRoutes /></BrowserRouter>
         </BankProvider>
       </MotionConfig>
     </QueryClientProvider>

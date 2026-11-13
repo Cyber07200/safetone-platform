@@ -124,7 +124,7 @@ export function AuditView({ run }: { run: RunDetail }) {
       </Section>
 
       <Section n={3} title={`Проверяемые утверждения · ${substantive.length}`} index={i++}>
-        {substantive.length ? <div className="space-y-2">{substantive.map((c) => <ClaimCard key={c.id} c={c} defaultOpen={c.status !== "CONFIRMED"} />)}</div>
+        {substantive.length ? <div className="stagger space-y-2">{substantive.map((c) => <ClaimCard key={c.id} c={c} defaultOpen={c.status !== "CONFIRMED"} />)}</div>
           : <p className="text-[13px] text-ink-500">Проверяемых утверждений не найдено.</p>}
         {service.length > 0 && <p className="mt-2 text-[12px] text-ink-500">Служебные фразы без фактов (не проверялись): {service.map((c) => `«${c.text}»`).join(" ")}</p>}
       </Section>

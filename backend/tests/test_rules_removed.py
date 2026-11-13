@@ -33,7 +33,7 @@ def test_no_code_references_legacy_rules():
     "Перевыпуск карты по окончании срока её действия — без комиссии.",
 ])
 def test_previously_blocked_harmless_answers_now_pass(db, bank_id, products, answer):
-    r = run_legal(db, bank_id=bank_id, product_id=products["card-horizon-120"],
+    r = run_legal(db, bank_id=bank_id, product_id=products["card-bereg-120"],
                   question="Сколько стоит выписка?", answer=answer)
     assert not r.needs_review
     assert r.corrected_text == answer
@@ -51,7 +51,7 @@ def test_legal_term_alone_is_not_a_violation(db, bank_id, products):
 def test_unmatched_harmless_statement_is_not_blocked(db, bank_id, products):
     # no source mentions this, but it is low-risk informational text: kept, not blocked
     answer = "Мобильное приложение удобно использовать с телефона."
-    r = run_legal(db, bank_id=bank_id, product_id=products["card-horizon-120"], question="Приложение?",
+    r = run_legal(db, bank_id=bank_id, product_id=products["card-bereg-120"], question="Приложение?",
                   answer=answer)
     assert r.corrected_text == answer
     assert not r.needs_review

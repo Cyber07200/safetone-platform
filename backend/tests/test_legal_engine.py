@@ -35,7 +35,7 @@ def test_every_demo_scenario_reaches_designed_status(db, bank_id, products, scen
     "Здравствуйте! Спасибо за обращение. Если у вас остались вопросы — обращайтесь!",
 ])
 def test_safe_answer_is_not_blocked(db, bank_id, products, answer):
-    r = legal(db, bank_id, products, "card-horizon-120", "Как узнать баланс карты?", answer)
+    r = legal(db, bank_id, products, "card-bereg-120", "Как узнать баланс карты?", answer)
     assert not r.needs_review
     assert r.corrected_text == answer.strip()          # nothing changed
     assert r.changes == []
@@ -143,11 +143,12 @@ def test_superseded_tariff_is_not_treated_as_current(db, bank_id, products):
     assert rel["contradicts"].sentence.hit.doc.actuality == "current"
 
 
-def test_unverified_law_excerpt_gives_outdated_source(db, bank_id, products):
-    sc = BY_ID["unverified-law"]
+def test_claim_is_confirmed_by_current_law_text(db, bank_id, products):
+    sc = BY_ID["law-deposit-insurance"]
     r = legal(db, bank_id, products, sc.product_code, sc.question, sc.answer)
-    assert {c.status for c in substantive(r)} == {"OUTDATED_SOURCE"}
-    assert "актуальность которого не подтверждена" in r.corrected_text
+    assert {c.status for c in substantive(r)} == {"CONFIRMED"}
+    docs = {e.sentence.hit.doc.title for c in substantive(r) for e in c.verdict.evidence}
+    assert any("177-ФЗ" in t for t in docs)
 
 
 def test_effective_actuality_uses_dates_not_upload_time():

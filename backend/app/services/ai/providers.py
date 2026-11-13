@@ -1,22 +1,16 @@
-"""Vendor adapters.
+"""GigaChat adapter — the only model SafeTone works with.
 
-Endpoints and auth follow the vendors' public documentation (checked
-2026-09):
-  * Yandex AI Studio: POST {YANDEX_BASE_URL}/completion, header
-    `Authorization: Api-Key <key>` or `Bearer <IAM token>`, body
-    {modelUri, completionOptions{stream,temperature,maxTokens}, messages[{role,text}]},
-    response result.alternatives[].message.text, result.usage.
-  * GigaChat: OAuth at GIGACHAT_OAUTH_URL (Basic <auth key>, RqUID, scope),
-    token lives 30 min; chat at {GIGACHAT_BASE_URL}/chat/completions
-    (OpenAI-like body). TLS may require the Russian Trusted Root CA
-    (set GIGACHAT_CA_BUNDLE).
-  * OpenAI-compatible: POST {OPENAI_BASE_URL}/chat/completions with Bearer key.
-All URLs are configurable because vendors move endpoints.
+Endpoints and auth follow the public GigaChat API documentation (checked
+2026-09): OAuth at GIGACHAT_OAUTH_URL (Basic <auth key>, RqUID, scope),
+token lives 30 min; chat at {GIGACHAT_BASE_URL}/chat/completions.
+TLS may require the Russian Trusted Root CA (set GIGACHAT_CA_BUNDLE).
+URLs are configurable because endpoints move.
 """
 from __future__ import annotations
 
 import asyncio
 import base64
+import logging
 import time
 import uuid
 
@@ -26,64 +20,7 @@ from app.core.config import Settings
 from app.core.errors import ProviderError
 from .base import AIProvider, Message, ProviderProfile, Usage
 
-
-class YandexGPTProvider(AIProvider):
-    name = "yandex"
-    label = "YandexGPT"
-
-    def __init__(self, settings: Settings):
-        super().__init__(timeout_s=settings.ai_request_timeout_s, profile=ProviderProfile(
-            quality_tier=2, cost_per_1k_tokens=settings.yandex_cost_per_1k_tokens, supports_json=True))
-        self.s = settings
-
-    @property
-    def model(self) -> str:
-        if self.s.yandex_model_uri:
-            return self.s.yandex_model_uri
-        if self.s.yandex_folder_id:
-            return f"gpt://{self.s.yandex_folder_id}/yandexgpt-lite/latest"
-        return "yandexgpt-lite"
-
-    def missing_config(self) -> list[str]:
-        missing = []
-        if not (self.s.yandex_api_key or self.s.yandex_iam_token):
-            missing.append("YANDEX_API_KEY или YANDEX_IAM_TOKEN")
-        if not (self.s.yandex_folder_id or self.s.yandex_model_uri):
-            missing.append("YANDEX_FOLDER_ID или YANDEX_MODEL_URI")
-        return missing
-
-    def is_configured(self) -> bool:
-        return not self.missing_config()
-
-    def _auth_header(self) -> str:
-        if self.s.yandex_api_key:
-            return f"Api-Key {self.s.yandex_api_key.get_secret_value()}"
-        return f"Bearer {self.s.yandex_iam_token.get_secret_value()}"  # type: ignore[union-attr]
-
-    async def _complete(self, client, messages, *, temperature, max_tokens, json_mode):
-        body = {
-            "modelUri": self.model,
-            "completionOptions": {"stream": False, "temperature": max(0.0, min(1.0, temperature)),
-                                  "maxTokens": str(max_tokens)},
-            "messages": [{"role": m.role, "text": m.content} for m in messages],
-        }
-        if json_mode:
-            body["jsonObject"] = True
-        headers = {"Authorization": self._auth_header(), "Content-Type": "application/json"}
-        if self.s.yandex_folder_id:
-            headers["x-folder-id"] = self.s.yandex_folder_id
-        resp = await client.post(f"{self.s.yandex_base_url.rstrip('/')}/completion", json=body, headers=headers)
-        self.raise_for_status(resp, self.name, self.label)
-        try:
-            data = resp.json()
-            result = data.get("result", data)
-            text = result["alternatives"][0]["message"]["text"]
-            u = result.get("usage") or {}
-            usage = Usage(_int(u.get("inputTextTokens")), _int(u.get("completionTokens")), _int(u.get("totalTokens")))
-            return text, usage, result.get("modelVersion") and f"{self.model} ({result['modelVersion']})"
-        except (KeyError, IndexError, TypeError, ValueError) as exc:
-            raise ProviderError(f"{self.label}: неожиданный формат ответа", provider=self.name,
-                                code="PROVIDER_BAD_RESPONSE") from exc
+log = logging.getLogger("safetone.ai.gigachat")
 
 
 class GigaChatProvider(AIProvider):
@@ -141,51 +78,66 @@ class GigaChatProvider(AIProvider):
 
     async def _complete(self, client, messages, *, temperature, max_tokens, json_mode):
         token = await self._get_token(client)
-        body = {"model": self.model, "messages": [{"role": m.role, "content": m.content} for m in messages],
-                "temperature": temperature, "max_tokens": max_tokens, "stream": False}
+        msgs = [{"role": m.role, "content": m.content, **({"attachments": m.attachments} if m.attachments else {})}
+                for m in messages]
+        body = {"model": self.model, "messages": msgs, "temperature": temperature, "max_tokens": max_tokens,
+                "stream": False}
         resp = await client.post(f"{self.s.gigachat_base_url.rstrip('/')}/chat/completions", json=body,
                                  headers={"Authorization": f"Bearer {token}", "Accept": "application/json"})
         if resp.status_code == 401:
             self._token = None
         self.raise_for_status(resp, self.name, self.label)
-        return _parse_openai_like(resp, self.name, self.label, self.model)
+        return _parse_chat_completion(resp, self.name, self.label, self.model)
 
 
-class OpenAICompatibleProvider(AIProvider):
-    name = "openai"
+    async def transcribe(self, data: bytes, filename: str, mime: str) -> str:
+        """Read the text of a photo or a scanned PDF: upload it to GigaChat (/files), ask the
+        model to transcribe it, then delete the file from GigaChat whatever happens."""
+        if not self.is_configured():
+            raise ProviderError("Распознавание фото и сканов требует GigaChat: добавьте ключ в backend/.env.",
+                                provider=self.name, code="PROVIDER_NOT_CONFIGURED")
+        base = self.s.gigachat_base_url.rstrip("/")
+        try:
+            async with self._client() as client:
+                token = await self._get_token(client)
+                up = await client.post(f"{base}/files", files={"file": (filename, data, mime)},
+                                       data={"purpose": "general"}, headers={"Authorization": f"Bearer {token}"})
+                self.raise_for_status(up, self.name, self.label + " (загрузка файла)")
+                file_id = up.json()["id"]
+        except httpx.TimeoutException as exc:
+            raise ProviderError(f"{self.label}: превышено время загрузки файла", provider=self.name,
+                                retryable=True, code="PROVIDER_TIMEOUT") from exc
+        except httpx.HTTPError as exc:
+            raise ProviderError(f"{self.label}: сетевая ошибка при загрузке файла", provider=self.name,
+                                retryable=True, code="PROVIDER_NETWORK_ERROR") from exc
+        except (KeyError, ValueError, TypeError) as exc:
+            raise ProviderError(f"{self.label}: неожиданный ответ на загрузку файла", provider=self.name,
+                                code="PROVIDER_BAD_RESPONSE") from exc
+        try:
+            res = await self.complete([Message("user", TRANSCRIBE_PROMPT, attachments=[file_id])],
+                                      temperature=0.0, max_tokens=4000)
+        finally:
+            await self._delete_file(file_id)
+        return res.text
 
-    def __init__(self, settings: Settings):
-        super().__init__(timeout_s=settings.ai_request_timeout_s, profile=ProviderProfile(
-            quality_tier=3, cost_per_1k_tokens=settings.openai_cost_per_1k_tokens, supports_json=True))
-        self.s = settings
-        self.label = settings.openai_provider_label or "OpenAI-compatible"
+    async def _delete_file(self, file_id: str) -> None:
+        try:
+            async with self._client() as client:
+                token = await self._get_token(client)
+                resp = await client.post(f"{self.s.gigachat_base_url.rstrip('/')}/files/{file_id}/delete",
+                                         headers={"Authorization": f"Bearer {token}"})
+                if resp.status_code >= 400:
+                    log.warning("GigaChat file delete failed: HTTP %s", resp.status_code)
+        except (httpx.HTTPError, ProviderError) as exc:
+            # The file stays in the GigaChat account; report it, don't fail the user's request.
+            log.warning("GigaChat file delete failed: %s", type(exc).__name__)
 
-    @property
-    def model(self) -> str:
-        return self.s.openai_model or "not-set"
 
-    def missing_config(self) -> list[str]:
-        m = []
-        if not self.s.openai_api_key:
-            m.append("OPENAI_API_KEY")
-        if not self.s.openai_base_url:
-            m.append("OPENAI_BASE_URL")
-        if not self.s.openai_model:
-            m.append("OPENAI_MODEL")
-        return m
-
-    def is_configured(self) -> bool:
-        return not self.missing_config()
-
-    async def _complete(self, client, messages, *, temperature, max_tokens, json_mode):
-        body = {"model": self.model, "messages": [{"role": m.role, "content": m.content} for m in messages],
-                "temperature": temperature, "max_tokens": max_tokens}
-        if json_mode:
-            body["response_format"] = {"type": "json_object"}
-        resp = await client.post(f"{self.s.openai_base_url.rstrip('/')}/chat/completions", json=body,  # type: ignore[union-attr]
-                                 headers={"Authorization": f"Bearer {self.s.openai_api_key.get_secret_value()}"})  # type: ignore[union-attr]
-        self.raise_for_status(resp, self.name, self.label)
-        return _parse_openai_like(resp, self.name, self.label, self.model)
+TRANSCRIBE_PROMPT = (
+    "Перепиши дословно весь текст документа из вложения: сохрани нумерацию пунктов, суммы, проценты, даты и "
+    "сроки. Таблицы передай строками «ячейка — ячейка». Не добавляй комментариев и выводов. Если текста нет "
+    "или он нечитаем, ответь ровно: ТЕКСТ НЕ РАСПОЗНАН."
+)
 
 
 def _int(v) -> int | None:
@@ -195,7 +147,7 @@ def _int(v) -> int | None:
         return None
 
 
-def _parse_openai_like(resp: httpx.Response, name: str, label: str, model: str):
+def _parse_chat_completion(resp: httpx.Response, name: str, label: str, model: str):
     try:
         data = resp.json()
         text = data["choices"][0]["message"]["content"]
@@ -207,5 +159,4 @@ def _parse_openai_like(resp: httpx.Response, name: str, label: str, model: str):
 
 
 def build_providers(settings: Settings) -> dict[str, AIProvider]:
-    return {p.name: p for p in (YandexGPTProvider(settings), GigaChatProvider(settings),
-                                OpenAICompatibleProvider(settings))}
+    return {p.name: p for p in (GigaChatProvider(settings),)}

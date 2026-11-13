@@ -11,7 +11,7 @@ from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from app import __version__
-from app.api.routes import documents, platform, process
+from app.api.routes import chat, documents, platform, process
 from app.core.config import BACKEND_DIR, get_settings
 from app.core.errors import install_error_handlers
 from app.core.logging import configure_logging
@@ -31,9 +31,20 @@ def bootstrap() -> None:
     db = SessionLocal()
     try:
         if settings.auto_seed_demo:
-            from app.seed.demo_data import seed_demo
+            from app.seed.demo_data import retire_old_demo_banks, seed_demo
+            retire_old_demo_banks(db)
             seed_demo(db)
-        from app.repositories.store import purge_expired_runs
+        if settings.seed_laws:
+            from app.seed.laws import seed_laws
+            seed_laws(db)
+        from app.models import Bank
+        from app.services.knowledge.retrieval import warm
+        for bank in db.query(Bank).all():
+            warm(db, bank.id)
+        from app.repositories.store import fail_interrupted_runs, purge_expired_runs
+        interrupted = fail_interrupted_runs(db)
+        if interrupted:
+            log.warning("Marked %s interrupted runs as FAILED", interrupted)
         removed = purge_expired_runs(db)
         if removed:
             log.info("Retention: removed %s expired runs", removed)
@@ -76,6 +87,7 @@ def create_app() -> FastAPI:
     app.include_router(platform.router)
     app.include_router(process.router)
     app.include_router(documents.router)
+    app.include_router(chat.router)
 
     # Optional: serve the built frontend from the same process (single-command demo).
     if FRONTEND_DIST.exists():

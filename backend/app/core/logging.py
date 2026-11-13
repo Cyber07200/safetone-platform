@@ -15,16 +15,14 @@ _AUTH_PATTERNS = [
     re.compile(r"(Api-Key\s+)[A-Za-z0-9_\-\.]+", re.I),
     re.compile(r"(Bearer\s+)[A-Za-z0-9_\-\.=]+", re.I),
     re.compile(r"(Basic\s+)[A-Za-z0-9+/=]+", re.I),
-    re.compile(r"(sk-)[A-Za-z0-9_\-]{8,}"),
-    re.compile(r"(AQVN)[A-Za-z0-9_\-]{10,}"),  # Yandex Cloud API key prefix
+    re.compile(r"(postgres(?:ql)?(?:\+\w+)?://[^:/@\s]+:)[^@\s]+"),  # DB password in connection URLs
 ]
 
 
 def _secret_values() -> list[str]:
     s = get_settings()
     values = []
-    for attr in ("yandex_api_key", "yandex_iam_token", "gigachat_auth_key",
-                 "gigachat_client_secret", "openai_api_key"):
+    for attr in ("gigachat_auth_key", "gigachat_client_secret", "chat_encryption_key"):
         v = getattr(s, attr)
         if v is not None:
             raw = v.get_secret_value()

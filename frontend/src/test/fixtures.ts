@@ -1,6 +1,6 @@
 import type { RunDetail, Scenario, Stage } from "../types/api";
 
-export const BANK = { id: "b1", slug: "demo", name: "Банк «Горизонт» (DEMO)", is_demo: true };
+export const BANK = { id: "b1", slug: "demo", name: "Банк «Ясный Берег» (DEMO)", is_demo: true };
 export const stages = (status: Stage["status"] = "completed"): Stage[] =>
   ["generation", "claim_extraction", "source_retrieval", "legal_verification", "legal_correction", "linguistic_rewrite", "semantic_validation", "final_response"]
     .map((key) => ({ key, title: key, status, method: key === "generation" ? "demo_scenario" : "m", summary: `summary ${key}`, started_at: null, finished_at: null, duration_ms: 3, warnings: [] }));
@@ -35,5 +35,5 @@ export const FAILED_RUN: RunDetail = {
   original_answer: null, claims: [], sources: [], legal_changes: [], semantic_check: {}, linguistic: {},
   stages: stages("skipped").map((s, i) => (i === 0 ? { ...s, status: "failed", summary: "Все провайдеры вернули ошибку" } : s)),
   error: { code: "ALL_PROVIDERS_FAILED", message: "Все доступные AI-провайдеры вернули ошибку", stage: "generation" }, notices: [],
-  ai_calls: [{ task: "generation", provider: "openai", model: "m", ok: false, attempt: 1, latency_ms: null, error_code: "PROVIDER_HTTP_ERROR", error: "HTTP 503", tokens: null, cost_estimate: null, selection_reason: "auto" }],
+  ai_calls: [{ task: "generation", provider: "gigachat", model: "GigaChat", ok: false, attempt: 1, latency_ms: null, error_code: "PROVIDER_HTTP_ERROR", error: "HTTP 503", tokens: null, cost_estimate: null, selection_reason: "auto" }],
 };

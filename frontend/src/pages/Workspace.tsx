@@ -36,6 +36,8 @@ export default function Workspace() {
   const qc = useQueryClient();
   const [runId, setRunId] = useState<string | null>(null);
   const run = useRun(runId);
+  // A run belongs to one bank: switching bank must not keep polling it under the new bank (→ 404).
+  useEffect(() => { setRunId(null); }, [bankId]);
 
   const start = useMutation({
     mutationFn: (input: ProcessInput) => api.process(input),

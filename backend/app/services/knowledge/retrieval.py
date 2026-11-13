@@ -161,6 +161,11 @@ def _index_for(db: Session, bank_id: str) -> _Index:
     return idx
 
 
+def warm(db: Session, bank_id: str) -> None:
+    """Build the search index ahead of the first request (reading ~3 000 chunks takes seconds)."""
+    _index_for(db, bank_id)
+
+
 def search(db: Session, *, bank_id: str, query: str, product_id: str | None = None,
            top_k: int = 6, min_score: float = 0.5) -> list[Hit]:
     idx = _index_for(db, bank_id)

@@ -166,3 +166,42 @@ class ProcessingRun(Base):
     missing_data: Mapped[list] = mapped_column(JSON, default=list)
     notices: Mapped[list] = mapped_column(JSON, default=list)
     error: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+
+
+class ChatConversation(Base):
+    """A dialogue with the assistant. Everything a human wrote or read is
+    encrypted (see app/core/crypto.py); only technical fields stay plain."""
+    __tablename__ = "chat_conversations"
+    __table_args__ = (Index("ix_chat_conv_owner", "bank_id", "owner_hash", "updated_at"),)
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    bank_id: Mapped[str] = mapped_column(ForeignKey("banks.id", ondelete="CASCADE"))
+    owner_hash: Mapped[str] = mapped_column(String(64))  # HMAC-SHA256 of the browser's owner token
+    title_enc: Mapped[str] = mapped_column(Text)
+    summary_enc: Mapped[str | None] = mapped_column(Text, nullable=True)  # memory of older messages
+    summarized_upto: Mapped[int] = mapped_column(Integer, default=0)  # seq covered by the summary
+    message_count: Mapped[int] = mapped_column(Integer, default=0)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+
+    messages: Mapped[list[ChatMessage]] = relationship(back_populates="conversation", cascade="all, delete-orphan",
+                                                       order_by="ChatMessage.seq")
+
+
+class ChatMessage(Base):
+    __tablename__ = "chat_messages"
+    __table_args__ = (UniqueConstraint("conversation_id", "seq"),)
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    conversation_id: Mapped[str] = mapped_column(ForeignKey("chat_conversations.id", ondelete="CASCADE"))
+    seq: Mapped[int] = mapped_column(Integer)
+    role: Mapped[str] = mapped_column(String(16))  # user | assistant
+    content_enc: Mapped[str] = mapped_column(Text)
+    sources_enc: Mapped[str | None] = mapped_column(Text, nullable=True)  # which laws/documents were used
+    attachment_enc: Mapped[str | None] = mapped_column(Text, nullable=True)  # uploaded document: name + its text
+    findings_enc: Mapped[str | None] = mapped_column(Text, nullable=True)  # document check results
+    mode: Mapped[str | None] = mapped_column(String(8), nullable=True)  # live | demo (assistant only)
+    model: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+
+    conversation: Mapped[ChatConversation] = relationship(back_populates="messages")

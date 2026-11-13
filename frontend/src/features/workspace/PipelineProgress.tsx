@@ -56,10 +56,10 @@ export function PipelineProgress({ stages, compact, layout = "list" }: { stages?
             </motion.span>
             <div className="min-w-0 flex-1">
               <div className="flex items-baseline justify-between gap-2">
-                <span className={clsx("text-[13px] font-medium", status === "pending" ? "text-ink-400" : "text-ink-900")}>
+                <span className={clsx("min-w-0 text-[13px] font-medium [overflow-wrap:anywhere]", status === "pending" ? "text-ink-400" : "text-ink-900")}>
                   <span className="mr-1.5 font-mono text-[11px] text-ink-400">{String(i + 1).padStart(2, "0")}</span>{s.title}
                 </span>
-                {revealed && s.duration_ms !== null && <span className="font-mono text-[11px] text-ink-400">{fmtMs(s.duration_ms)}</span>}
+                {revealed && s.duration_ms !== null && <span className="shrink-0 font-mono text-[11px] text-ink-400">{fmtMs(s.duration_ms)}</span>}
               </div>
               {!compact && revealed && s.summary && (
                 <motion.p initial={reduce ? false : { opacity: 0 }} animate={{ opacity: 1 }} className={clsx("mt-0.5 text-[12px] leading-snug", s.status === "failed" ? "text-bad-700" : "text-ink-500")}>

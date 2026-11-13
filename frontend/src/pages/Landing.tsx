@@ -1,15 +1,16 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
+import { AnimatePresence, motion, useReducedMotion, useScroll, useTransform } from "framer-motion";
 import { Link } from "react-router-dom";
 import clsx from "clsx";
 import { ArrowRight, Building2, ChevronDown, FileCheck2, GitBranch, Layers, Lock, Menu, Scale, ShieldCheck, SpellCheck2, Users, X } from "lucide-react";
-import { Badge, Button, Logo, Reveal } from "../components/ui";
+import { Badge, EASE, Logo, Reveal, ScrollText, buttonClass, reveal } from "../components/ui";
 import { HeroDemo } from "../features/landing/HeroDemo";
 import { DiffText } from "../features/workspace/DiffText";
 
 const NAV = [["#how", "Как это работает"], ["#legal", "Legal Assurance"], ["#clarity", "Linguistic Clarity"], ["#security", "Безопасность"], ["#faq", "FAQ"]];
 
 const PIPELINE = [
-  { layer: "AI", title: "Генерация", text: "Готовая модель через API: YandexGPT, GigaChat или OpenAI-совместимая." },
+  { layer: "AI", title: "Генерация", text: "GigaChat через API пишет черновик ответа с опорой на базу знаний." },
   { layer: "Legal", title: "Утверждения", text: "Ответ разбирается на проверяемые факты: ставки, комиссии, сроки, обязательства." },
   { layer: "Legal", title: "Источники", text: "Поиск релевантных пунктов договоров, тарифов и нормативных документов банка." },
   { layer: "Legal", title: "Проверка", text: "Каждое утверждение сверяется с источником и получает статус и уровень риска." },
@@ -38,7 +39,7 @@ const ADVANTAGES = [
   ["Не блокирует безобидные ответы", "Нет списков «запрещённых слов». Термин «гарантия» или «без оплаты» не нарушение — нарушение только неподтверждённое утверждение."],
   ["Каждое исправление с основанием", "Документ, версия, пункт и цитата — для каждого изменения в ответе."],
   ["Честные статусы", "Если модель недоступна — FAILED, а не «успешно». Demo-сценарии помечены как демо, а не как генерация."],
-  ["Несколько моделей", "Единый слой провайдеров, маршрутизация, повторы и fallback без привязки к одному вендору."],
+  ["Зашифрованная история", "Переписка с ассистентом хранится в AES-256-GCM: у каждого диалога свой ключ, ключи — только на сервере."],
   ["Версии и актуальность", "Дата загрузки ≠ дата действия. Устаревшие версии тарифов не подтверждают ответы."],
   ["Изоляция банков", "Документы, история и настройки каждого банка разделены на уровне данных."],
 ];
@@ -46,35 +47,46 @@ const ADVANTAGES = [
 const TEAMS = [
   { icon: Scale, role: "Комплаенс и юристы", text: "Журнал решений с основаниями, очередь NEEDS REVIEW, контроль актуальности источников." },
   { icon: Layers, role: "Продуктовые команды", text: "Тарифы и договоры загружаются как источники — ответы ассистента сверяются с ними автоматически." },
-  { icon: GitBranch, role: "IT и архитектура", text: "REST API с OpenAPI, модульный backend, PostgreSQL, конфигурация провайдеров через .env." },
+  { icon: GitBranch, role: "IT и архитектура", text: "REST API с OpenAPI, модульный backend, PostgreSQL в Supabase, ключи только на сервере." },
   { icon: Users, role: "Клиентский сервис", text: "Понятные ответы без канцелярита — с сохранением всех условий и оговорок." },
 ];
 
 const FAQ = [
-  ["SafeTone — это своя нейросеть?", "Нет. SafeTone работает поверх готовых моделей через их API. Ценность — в проверке ответа по источникам, корректировке и аудите."],
+  ["SafeTone — это своя нейросеть?", "Нет. SafeTone работает поверх GigaChat через API. Ценность — в проверке ответа по законам и документам банка, корректировке и аудите."],
   ["Проверяет ли SafeTone ответы по действующему законодательству?", "Только по тем источникам, которые загружены в базу знаний и имеют подтверждённую актуальность. В демо-версии законы представлены справочными пересказами без подтверждённой актуальности — утверждения, опирающиеся только на них, получают статус OUTDATED SOURCE."],
   ["Что происходит, если данных недостаточно?", "SafeTone не придумывает ставку или условие. Неподтверждённое существенное утверждение убирается, в аудите указывается, каких данных не хватает, а ответ переводится в NEEDS REVIEW."],
   ["Можно ли попробовать без API-ключей?", "Да. Demo Mode работает полностью локально: исходные ответы взяты из подготовленных сценариев (это явно отмечено), а юридический и лингвистический слои выполняются по-настоящему."],
-  ["Передаются ли документы банка во внешние модели?", "По умолчанию — нет. Это отдельная настройка банка. Фрагменты, похожие на инструкции для модели (prompt injection), не передаются никогда."],
+  ["Передаются ли документы банка в GigaChat?", "По умолчанию — нет. Это отдельная настройка банка. Фрагменты, похожие на инструкции для модели (prompt injection), не передаются никогда."],
   ["SafeTone сертифицирован для банков?", "Нет. Это MVP. Сертификация и соответствие требованиям конкретного банка не заявляются и требуют отдельной работы."],
 ];
 
 function Header() {
   const [open, setOpen] = useState(false);
   return (
-    <header className="sticky top-0 z-40 border-b hairline bg-white/85 backdrop-blur">
-      <div className="container-page flex h-16 items-center gap-6">
+    <header className="glass sticky top-0 z-40 border-b hairline">
+      <div className="container-page flex h-14 items-center gap-6">
         <Link to="/" aria-label="SafeTone — на главную"><Logo /></Link>
-        <nav className="hidden items-center gap-5 md:flex" aria-label="Навигация">
-          {NAV.map(([h, l]) => <a key={h} href={h} className="text-[14px] text-ink-600 transition-colors hover:text-ink-950">{l}</a>)}
+        <nav className="hidden items-center gap-5 lg:flex" aria-label="Навигация">
+          {NAV.map(([h, l]) => <a key={h} href={h} className="text-[13px] text-ink-700 transition-colors duration-200 hover:text-ink-950">{l}</a>)}
         </nav>
         <div className="ml-auto flex items-center gap-2">
-          <Link to="/app" className="hidden sm:block"><Button variant="ghost" size="sm">Кабинет</Button></Link>
-          <Link to="/app/workspace"><Button size="sm">Попробовать демо</Button></Link>
-          <button className="rounded-md p-1.5 hover:bg-ink-100 md:hidden" aria-label="Меню" onClick={() => setOpen(!open)}>{open ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}</button>
+          <Link to="/app" className={buttonClass("ghost", "sm", "hidden sm:inline-flex")}>Кабинет</Link>
+          <Link to="/app/workspace" className={buttonClass("primary", "sm")}>Попробовать демо</Link>
+          <button className="grid h-9 w-9 place-items-center rounded-full hover:bg-ink-100 lg:hidden" aria-label="Меню" aria-expanded={open} onClick={() => setOpen(!open)}>{open ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}</button>
         </div>
       </div>
-      {open && <nav className="container-page flex flex-col gap-1 pb-3 md:hidden">{NAV.map(([h, l]) => <a key={h} href={h} onClick={() => setOpen(false)} className="rounded-md px-2 py-2 text-[14px] text-ink-700 hover:bg-ink-50">{l}</a>)}</nav>}
+      <AnimatePresence initial={false}>
+        {open && (
+          <motion.nav key="m" initial={{ height: 0, opacity: 0 }} animate={{ height: "auto", opacity: 1 }} exit={{ height: 0, opacity: 0 }} transition={{ duration: 0.4, ease: EASE }} className="overflow-hidden lg:hidden">
+            <div className="container-page flex flex-col gap-1 pb-3">
+              {NAV.map(([h, l], i) => (
+                <motion.a key={h} href={h} onClick={() => setOpen(false)} initial={{ opacity: 0, y: -6 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.35, delay: 0.04 * i, ease: EASE }}
+                  className="rounded-lg px-2 py-2.5 text-[15px] text-ink-700 hover:bg-ink-50">{l}</motion.a>
+              ))}
+            </div>
+          </motion.nav>
+        )}
+      </AnimatePresence>
     </header>
   );
 }
@@ -83,38 +95,70 @@ function SectionHead({ eyebrow, title, text, id }: { eyebrow: string; title: str
   return (
     <Reveal>
       <div id={id} className="max-w-2xl scroll-mt-24">
-        <div className="label-mono mb-3 text-brand-700">{eyebrow}</div>
-        <h2 className="text-[30px] font-semibold leading-[1.1] tracking-[-0.03em] text-ink-950 sm:text-[38px]">{title}</h2>
-        {text && <p className="mt-4 text-[16px] leading-relaxed text-ink-600">{text}</p>}
+        <div className="mb-3 text-[15px] font-semibold text-brand-700">{eyebrow}</div>
+        <h2 className="text-[34px] font-semibold leading-[1.06] tracking-[-0.035em] text-ink-950 sm:text-[48px]">{title}</h2>
+        {text && <p className="mt-5 text-[17px] leading-relaxed text-ink-600 sm:text-[19px]">{text}</p>}
       </div>
     </Reveal>
   );
 }
 
+function Hero() {
+  const ref = useRef<HTMLDivElement>(null);
+  const reduce = useReducedMotion();
+  const { scrollYProgress } = useScroll({ target: ref, offset: ["start end", "end start"] });
+  // Demo card tilts up and settles as it scrolls in — subtle, Apple product-page style.
+  const scale = useTransform(scrollYProgress, [0, 0.45], [0.92, 1]);
+  const rotateX = useTransform(scrollYProgress, [0, 0.45], [10, 0]);
+  const word = (t: string, i: number, cls?: string) => (
+    <motion.span key={t} className={clsx("inline-block sm:block", cls)} initial={reduce ? false : { opacity: 0, y: 24, filter: "blur(8px)" }}
+      animate={{ opacity: 1, y: 0, filter: "blur(0px)" }} transition={{ duration: 1, delay: 0.1 + i * 0.12, ease: EASE }}>{t}</motion.span>
+  );
+  return (
+    <section className="relative overflow-hidden">
+      <div aria-hidden className="pointer-events-none absolute left-1/2 top-[-280px] h-[640px] w-[1100px] -translate-x-1/2 rounded-full bg-[radial-gradient(closest-side,rgba(0,113,227,.12),transparent)]" />
+      <div className="container-page relative pb-20 pt-16 text-center sm:pt-24 lg:pb-28">
+        <motion.div initial={reduce ? false : { opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.8, ease: EASE }}>
+          <Badge tone="info" className="mb-6"><span className="sm:hidden">Legal & Linguistic Assurance</span><span className="hidden sm:inline">Legal & Linguistic Assurance для банковских AI-ассистентов</span></Badge>
+        </motion.div>
+        <h1 className="mx-auto max-w-5xl text-[40px] font-semibold leading-[1.04] tracking-[-0.045em] text-ink-950 sm:text-[60px] lg:text-[76px]">
+          {word("Юридическая точность.", 0)}{" "}{word("Понятный язык.", 1, "text-brand-600")}{" "}{word("Доверие в каждом ответе.", 2)}
+        </h1>
+        <motion.div initial={reduce ? false : { opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.9, delay: 0.5, ease: EASE }}>
+          <p className="mx-auto mt-7 max-w-2xl text-[18px] leading-relaxed text-ink-600 sm:text-[21px]">
+            SafeTone проверяет ответ языковой модели по договорам, тарифам и нормативным источникам банка, исправляет ошибки с указанием оснований и переписывает ответ понятно — не меняя юридический смысл.
+          </p>
+          <div className="mt-9 flex flex-wrap justify-center gap-3">
+            <Link to="/app/workspace" className={buttonClass("primary", "lg")}>Попробовать демо<ArrowRight className="arrow-nudge h-4 w-4" /></Link>
+            <a href="#how" className={buttonClass("secondary", "lg")}>Как это работает</a>
+          </div>
+          <p className="mt-6 text-[13px] text-ink-500">Работает на GigaChat · Demo Mode без API-ключей</p>
+        </motion.div>
+        <div ref={ref} className="relative mx-auto mt-16 max-w-3xl text-left [perspective:1200px]">
+          <motion.div style={reduce ? undefined : { scale, rotateX }} initial={reduce ? false : { opacity: 0, y: 40 }} animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 1.1, delay: 0.7, ease: EASE }} className="rounded-[28px] shadow-glow">
+            <HeroDemo />
+          </motion.div>
+        </div>
+      </div>
+    </section>
+  );
+}
+
 export default function Landing() {
   const [faq, setFaq] = useState<number | null>(0);
+  const reduce = useReducedMotion();
   return (
     <div className="bg-white">
       <Header />
       {/* HERO */}
-      <section className="relative overflow-hidden border-b hairline">
-        <div className="grid-bg pointer-events-none absolute inset-0 [mask-image:linear-gradient(to_bottom,black,transparent_85%)]" />
-        <div className="container-page relative grid items-center gap-12 py-14 lg:grid-cols-[1.05fr_1fr] lg:py-24">
-          <Reveal>
-            <Badge tone="info" className="mb-6">Legal & Linguistic Assurance для банковских AI-ассистентов</Badge>
-            <h1 className="text-[40px] font-semibold leading-[1.02] tracking-[-0.04em] text-ink-950 sm:text-[56px] lg:text-[64px]">
-              Юридическая точность.<br /><span className="text-brand-600">Понятный язык.</span><br />Доверие в каждом ответе.
-            </h1>
-            <p className="mt-6 max-w-xl text-[17px] leading-relaxed text-ink-600">
-              SafeTone проверяет ответ языковой модели по договорам, тарифам и нормативным источникам банка, исправляет ошибки с указанием оснований и переписывает ответ понятно — не меняя юридический смысл.
-            </p>
-            <div className="mt-8 flex flex-wrap gap-3">
-              <Link to="/app/workspace"><Button size="lg" icon={<ArrowRight className="h-4 w-4" />} className="flex-row-reverse">Попробовать демо</Button></Link>
-              <a href="#how"><Button size="lg" variant="secondary">Как это работает</Button></a>
-            </div>
-            <p className="mt-6 text-[13px] text-ink-500">Работает поверх YandexGPT, GigaChat и OpenAI-совместимых моделей · Demo Mode без API-ключей</p>
-          </Reveal>
-          <Reveal delay={0.1}><HeroDemo /></Reveal>
+      <Hero />
+
+      {/* STATEMENT — words light up while scrolling */}
+      <section className="py-16 sm:py-24">
+        <div className="container-page">
+          <ScrollText className="max-w-4xl text-[28px] font-semibold leading-[1.18] tracking-[-0.03em] text-ink-950 sm:text-[40px] lg:text-[48px]"
+            text="SafeTone — не ещё одна нейросеть. Он работает поверх GigaChat и отвечает за то, чего языковой модели не хватает: проверяет каждое утверждение по источникам банка, исправляет ошибки с основанием и сохраняет полный аудит." />
         </div>
       </section>
 
@@ -122,10 +166,10 @@ export default function Landing() {
       <section className="py-20 sm:py-28">
         <div className="container-page">
           <SectionHead id="how" eyebrow="Pipeline" title="Восемь этапов между моделью и клиентом" text="Каждый этап фиксирует статус, метод и результат. Если этап не выполнен — это видно в аудите, а не скрыто за «успешной» обработкой." />
-          <Reveal className="mt-12">
+          <div className="mt-12">
             <ol className="grid gap-px overflow-hidden rounded-2xl border hairline bg-ink-200/70 sm:grid-cols-2 lg:grid-cols-4">
               {PIPELINE.map((p, i) => (
-                <li key={p.title} className="group relative bg-white p-5 transition-colors hover:bg-brand-50/30">
+                <motion.li key={p.title} {...reveal(reduce, (i % 4) * 0.08, 20)} className="group relative bg-white p-5 transition-colors duration-300 hover:bg-brand-50/30">
                   <div className="flex items-center justify-between">
                     <span className="font-mono text-[12px] text-ink-400">{String(i + 1).padStart(2, "0")}</span>
                     <span className={clsx("rounded px-1.5 py-0.5 font-mono text-[10px] uppercase tracking-wider",
@@ -133,11 +177,11 @@ export default function Landing() {
                   </div>
                   <div className="mt-6 text-[16px] font-semibold text-ink-950">{p.title}</div>
                   <p className="mt-1.5 text-[13px] leading-relaxed text-ink-600">{p.text}</p>
-                  {i < PIPELINE.length - 1 && <ArrowRight className="absolute right-3 top-1/2 hidden h-4 w-4 -translate-y-1/2 text-ink-300 lg:block" />}
-                </li>
+                  {i < PIPELINE.length - 1 && <ArrowRight className="absolute right-3 top-1/2 hidden h-4 w-4 -translate-y-1/2 text-ink-300 transition-all duration-300 ease-apple group-hover:text-brand-600 motion-safe:group-hover:translate-x-0.5 lg:block" />}
+                </motion.li>
               ))}
             </ol>
-          </Reveal>
+          </div>
         </div>
       </section>
 
@@ -193,13 +237,13 @@ export default function Landing() {
       <section className="border-t hairline py-20 sm:py-28">
         <div className="container-page">
           <SectionHead eyebrow="Преимущества" title="Соразмерная проверка вместо слепой блокировки" />
-          <Reveal className="mt-12">
+          <div className="mt-12">
             <div className="grid gap-px overflow-hidden rounded-2xl border hairline bg-ink-200/70 md:grid-cols-2 lg:grid-cols-3">
               {ADVANTAGES.map(([t, d], i) => (
-                <div key={t} className="bg-white p-6"><span className="font-mono text-[12px] text-brand-600">{String(i + 1).padStart(2, "0")}</span><div className="mt-3 text-[16px] font-semibold text-ink-950">{t}</div><p className="mt-2 text-[14px] leading-relaxed text-ink-600">{d}</p></div>
+                <motion.div key={t} {...reveal(reduce, (i % 3) * 0.08, 20)} className="bg-white p-6"><span className="font-mono text-[12px] text-brand-600">{String(i + 1).padStart(2, "0")}</span><div className="mt-3 text-[16px] font-semibold text-ink-950">{t}</div><p className="mt-2 text-[14px] leading-relaxed text-ink-600">{d}</p></motion.div>
               ))}
             </div>
-          </Reveal>
+          </div>
         </div>
       </section>
 
@@ -210,7 +254,7 @@ export default function Landing() {
           <div className="space-y-3">
             {TEAMS.map(({ icon: Icon, role, text }, i) => (
               <Reveal key={role} delay={i * 0.05}>
-                <div className="card flex gap-4 p-5"><div className="grid h-10 w-10 shrink-0 place-items-center rounded-lg bg-brand-50 text-brand-700"><Icon className="h-5 w-5" /></div>
+                <div className="card card-hover flex gap-4 p-5"><div className="grid h-10 w-10 shrink-0 place-items-center rounded-lg bg-brand-50 text-brand-700"><Icon className="h-5 w-5" /></div>
                   <div><div className="text-[15px] font-semibold text-ink-950">{role}</div><p className="mt-1 text-[14px] leading-relaxed text-ink-600">{text}</p></div></div>
               </Reveal>
             ))}
@@ -228,17 +272,17 @@ export default function Landing() {
               <p className="mt-4 text-[16px] leading-relaxed text-ink-300">Базовые механизмы безопасности MVP, спроектированные с учётом дальнейшего банковского внедрения. Соответствие конкретным регуляторным требованиям не заявляется и требует отдельной оценки.</p>
             </div>
           </Reveal>
-          <Reveal delay={0.1}>
+          <div>
             <ul className="grid gap-px overflow-hidden rounded-2xl bg-white/10 sm:grid-cols-2">
               {[[Lock, "Ключи только в backend", "API-ключи не попадают во frontend, историю и журналы; секреты маскируются."],
                 [Building2, "Изоляция банков", "Банк видит только свои документы и общие нормативные источники."],
                 [ShieldCheck, "Безопасная загрузка", "Проверка формата по содержимому, лимиты размера, защита от path traversal, код не исполняется."],
-                [SpellCheck2, "Защита от prompt injection", "Инструкции системы отделены от данных; подозрительные фрагменты не передаются в модели."]].map(([Icon, t, d]) => {
+                [SpellCheck2, "Защита от prompt injection", "Инструкции системы отделены от данных; подозрительные фрагменты не передаются в модели."]].map(([Icon, t, d], i) => {
                 const I = Icon as typeof Lock;
-                return <li key={t as string} className="bg-ink-950 p-6"><I className="h-5 w-5 text-brand-400" /><div className="mt-4 text-[15px] font-semibold">{t as string}</div><p className="mt-1.5 text-[14px] leading-relaxed text-ink-400">{d as string}</p></li>;
+                return <motion.li key={t as string} {...reveal(reduce, i * 0.08, 20)} className="bg-ink-950 p-6"><I className="h-5 w-5 text-brand-400" /><div className="mt-4 text-[15px] font-semibold">{t as string}</div><p className="mt-1.5 text-[14px] leading-relaxed text-ink-400">{d as string}</p></motion.li>;
               })}
             </ul>
-          </Reveal>
+          </div>
         </div>
       </section>
 
@@ -249,11 +293,18 @@ export default function Landing() {
           <div className="divide-y divide-ink-200 border-y hairline">
             {FAQ.map(([q, a], i) => (
               <div key={q}>
-                <button className="flex w-full items-center justify-between gap-4 py-5 text-left" aria-expanded={faq === i} onClick={() => setFaq(faq === i ? null : i)}>
-                  <span className="text-[16px] font-medium text-ink-950">{q}</span>
-                  <ChevronDown className={clsx("h-5 w-5 shrink-0 text-ink-400 transition-transform", faq === i && "rotate-180")} />
+                <button className="flex w-full items-center justify-between gap-4 py-5 text-left" aria-expanded={faq === i} aria-controls={`faq-${i}`} onClick={() => setFaq(faq === i ? null : i)}>
+                  <span className="text-[17px] font-medium tracking-[-0.01em] text-ink-950">{q}</span>
+                  <ChevronDown className={clsx("h-5 w-5 shrink-0 text-ink-400 transition-transform duration-500 ease-apple", faq === i && "rotate-180")} />
                 </button>
-                {faq === i && <p className="-mt-1 pb-5 text-[15px] leading-relaxed text-ink-600">{a}</p>}
+                <AnimatePresence initial={false}>
+                  {faq === i && (
+                    <motion.div id={`faq-${i}`} key="a" initial={{ height: 0, opacity: 0 }} animate={{ height: "auto", opacity: 1 }} exit={{ height: 0, opacity: 0 }}
+                      transition={{ duration: 0.45, ease: EASE }} className="overflow-hidden">
+                      <p className="pb-5 text-[15px] leading-relaxed text-ink-600">{a}</p>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
               </div>
             ))}
           </div>
@@ -262,17 +313,18 @@ export default function Landing() {
 
       {/* CTA + FOOTER */}
       <section className="border-t hairline">
-        <div className="container-page flex flex-col items-start justify-between gap-6 py-16 md:flex-row md:items-center">
-          <div><h2 className="text-[28px] font-semibold tracking-[-0.03em] text-ink-950">Посмотрите на реальную обработку</h2><p className="mt-2 text-[15px] text-ink-600">Десять демо-сценариев, полный аудит, без API-ключей.</p></div>
-          <Link to="/app/workspace"><Button size="lg">Открыть AI Workspace</Button></Link>
-        </div>
+        <Reveal className="container-page flex flex-col items-center gap-6 py-24 text-center">
+          <h2 className="text-[34px] font-semibold tracking-[-0.035em] text-ink-950 sm:text-[48px]">Посмотрите на реальную обработку</h2>
+          <p className="text-[17px] text-ink-600 sm:text-[19px]">Десять демо-сценариев, полный аудит, без API-ключей.</p>
+          <Link to="/app/workspace" className={buttonClass("primary", "lg")}>Открыть AI Workspace<ArrowRight className="arrow-nudge h-4 w-4" /></Link>
+        </Reveal>
       </section>
       <footer className="border-t hairline bg-ink-50/60">
         <div className="container-page flex flex-col gap-6 py-10 text-[13px] text-ink-500 md:flex-row md:justify-between">
           <div className="max-w-md"><Logo /><p className="mt-3 leading-relaxed">SafeTone — MVP платформы проверки ответов AI. Не является юридической консультацией. Демонстрационный банк, его продукты, тарифы и договоры вымышлены.</p></div>
           <div className="flex gap-10">
             <div className="flex flex-col gap-2"><span className="label-mono">Продукт</span><Link to="/app/workspace" className="hover:text-ink-900">Workspace</Link><Link to="/app/knowledge" className="hover:text-ink-900">База знаний</Link><Link to="/app/history" className="hover:text-ink-900">История</Link></div>
-            <div className="flex flex-col gap-2"><span className="label-mono">Разработчикам</span><a href="/docs" className="hover:text-ink-900">OpenAPI</a><Link to="/app/models" className="hover:text-ink-900">Провайдеры</Link></div>
+            <div className="flex flex-col gap-2"><span className="label-mono">Разработчикам</span><a href="/docs" className="hover:text-ink-900">OpenAPI</a><Link to="/app/models" className="hover:text-ink-900">GigaChat</Link></div>
           </div>
         </div>
       </footer>

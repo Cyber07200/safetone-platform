@@ -108,3 +108,11 @@ export interface ProcessInput {
   bank_id: string; product_id?: string | null; question: string; mode: Mode; scenario_id?: string | null;
   answer_text?: string | null; provider?: string | null; tone: Tone;
 }
+
+export interface ChatSource { document_id: string; title: string; section: string; doc_type: string; actuality: Actuality; source_url: string | null; quote: string }
+export interface ChatAttachment { filename: string; kind: string; size: number; chars: number; recognized_by: "text_layer" | "gigachat"; truncated: boolean }
+export interface ChatFinding { status: ClaimStatus; text: string; explanation: string; source: string | null; section: string | null; quote: string | null }
+export interface ChatMessage { id: string; role: "user" | "assistant"; content: string; sources: ChatSource[]; mode: Mode | null; model: string | null; created_at: string; attachment?: ChatAttachment | null; findings?: ChatFinding[] | null }
+export interface ChatConversation { id: string; title: string; message_count: number; created_at: string; updated_at: string }
+export interface ChatConversationDetail extends ChatConversation { messages: ChatMessage[] }
+export interface ChatSendResponse { conversation: ChatConversation; user_message: ChatMessage; assistant_message: ChatMessage }

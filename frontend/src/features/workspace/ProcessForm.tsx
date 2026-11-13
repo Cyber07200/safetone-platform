@@ -49,6 +49,7 @@ export function ProcessForm({ onSubmit, submitting, initialScenario }: { onSubmi
   const [provider, setProvider] = useState("auto");
 
   useEffect(() => { if (settings.data) setTone(settings.data.bank.default_tone); }, [settings.data]);
+  useEffect(() => { if (providers.isSuccess && !liveAvailable) setMode("demo"); }, [providers.isSuccess, liveAvailable]);
   useEffect(() => {
     if (!scenarios.data?.length) return;
     const s = scenarios.data.find((x) => x.id === (scenarioId ?? initialScenario)) ?? scenarios.data[0];

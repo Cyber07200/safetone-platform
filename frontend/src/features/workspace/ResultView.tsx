@@ -1,12 +1,11 @@
 import { useState } from "react";
 import { Link } from "react-router-dom";
 import clsx from "clsx";
-import { motion, useReducedMotion } from "framer-motion";
 import { AlertOctagon, Check, CheckCircle2, Copy, ExternalLink, RotateCcw, ShieldAlert } from "lucide-react";
 import type { RunDetail } from "../../types/api";
 import { CLAIM, ORIGIN, RESULT } from "../../lib/labels";
 import { fmtMs } from "../../lib/format";
-import { Badge, Button, ResultBadge, RiskBadge, Segmented } from "../../components/ui";
+import { Badge, Button, ResultBadge, RiskBadge, Segmented, buttonClass } from "../../components/ui";
 import { AuditView } from "../audit/AuditView";
 import { DiffText } from "./DiffText";
 
@@ -34,14 +33,15 @@ function StatusBanner({ run }: { run: RunDetail }) {
 export function ResultView({ run, onRerun, rerunning }: { run: RunDetail; onRerun?: () => void; rerunning?: boolean }) {
   const [view, setView] = useState<"result" | "audit">("result");
   const [cmp, setCmp] = useState<"full" | "legal" | "linguistic">("full");
-  const [copied, setCopied] = useState(false);
-  const reduce = useReducedMotion();
+  const [copied, setCopied] = useState<"ok" | "fail" | null>(null);
   const substantive = run.claims.filter((c) => c.substantive);
   const counts = substantive.reduce<Record<string, number>>((a, c) => ({ ...a, [c.status]: (a[c.status] ?? 0) + 1 }), {});
 
   const copy = async () => {
     if (!run.final_answer) return;
-    try { await navigator.clipboard.writeText(run.final_answer); setCopied(true); setTimeout(() => setCopied(false), 1600); } catch { /* clipboard blocked */ }
+    let result: "ok" | "fail" = "ok";
+    try { await navigator.clipboard.writeText(run.final_answer); } catch { result = "fail"; } // clipboard blocked by browser policy
+    setCopied(result); setTimeout(() => setCopied(null), 2000);
   };
 
   const pair = cmp === "full" ? [run.original_answer, run.final_answer] : cmp === "legal" ? [run.original_answer, run.legal_answer] : [run.legal_answer, run.final_answer];
@@ -56,16 +56,17 @@ export function ResultView({ run, onRerun, rerunning }: { run: RunDetail; onReru
         </div>
         <div className="flex flex-wrap gap-2">
           {onRerun && <Button variant="secondary" size="sm" icon={<RotateCcw className="h-3.5 w-3.5" />} onClick={onRerun} loading={rerunning}>Повторить</Button>}
-          <Link to={`/app/runs/${run.id}`}><Button variant="ghost" size="sm" icon={<ExternalLink className="h-3.5 w-3.5" />}>Открыть аудит</Button></Link>
+          <Link to={`/app/runs/${run.id}`} className={buttonClass("ghost", "sm")}><ExternalLink className="h-3.5 w-3.5" />Открыть аудит</Link>
         </div>
       </div>
 
       {view === "result" ? (
-        <motion.div key="result" initial={reduce ? false : { opacity: 0 }} animate={{ opacity: 1 }} className="space-y-4">
+        <div key="result" className="stagger space-y-4">
           <div className="card overflow-hidden">
             <div className="flex items-center justify-between border-b hairline px-4 py-2.5">
               <span className="label-mono">Итоговый ответ клиенту</span>
-              <Button variant="ghost" size="sm" onClick={copy} disabled={!run.final_answer} icon={copied ? <Check className="h-3.5 w-3.5 text-ok-600" /> : <Copy className="h-3.5 w-3.5" />}>{copied ? "Скопировано" : "Копировать"}</Button>
+              <Button variant="ghost" size="sm" onClick={copy} disabled={!run.final_answer} icon={copied === "ok" ? <Check className="h-3.5 w-3.5 text-ok-600" /> : <Copy className="h-3.5 w-3.5" />}>
+                <span aria-live="polite">{copied === "ok" ? "Скопировано" : copied === "fail" ? "Не удалось — выделите текст вручную" : "Копировать"}</span></Button>
             </div>
             <div className="whitespace-pre-line px-4 py-4 text-[15px] leading-relaxed text-ink-900" data-testid="final-answer">
               {run.final_answer ?? <span className="text-bad-700">Итоговый ответ не сформирован.</span>}
@@ -97,7 +98,7 @@ export function ResultView({ run, onRerun, rerunning }: { run: RunDetail; onReru
               <ul className="list-disc space-y-0.5 pl-5">{run.missing_data.map((m) => <li key={m}>{m}</li>)}</ul>
             </div>
           )}
-        </motion.div>
+        </div>
       ) : (
         <div className="card p-4 sm:p-6"><AuditView run={run} /></div>
       )}

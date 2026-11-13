@@ -69,7 +69,7 @@ class ProcessRequest(BaseModel):
     mode: Mode = "demo"
     scenario_id: str | None = None
     answer_text: str | None = Field(default=None, description="Готовый ответ AI для проверки (без генерации)")
-    provider: str | None = Field(default=None, description="auto | yandex | gigachat | openai")
+    provider: str | None = Field(default=None, description="auto | gigachat")
     tone: Tone = "neutral"
     wait: bool = Field(default=False, description="Дождаться завершения (для интеграций и тестов)")
 
@@ -219,7 +219,7 @@ class BankSettingsOut(BaseModel):
 
 class BankSettingsIn(BaseModel):
     default_mode: Mode | None = None
-    default_provider: Literal["auto", "yandex", "gigachat", "openai"] | None = None
+    default_provider: Literal["auto", "gigachat"] | None = None
     default_tone: Tone | None = None
     quality_preference: Literal["economy", "balanced", "quality"] | None = None
     allow_documents_to_llm: bool | None = None
@@ -249,3 +249,83 @@ class Stats(BaseModel):
     documents: int
     documents_needing_attention: int
     recent: list[RunSummary]
+
+
+# ---- chat ---------------------------------------------------------------------
+class ChatSource(BaseModel):
+    document_id: str
+    title: str
+    section: str
+    doc_type: str
+    actuality: str
+    source_url: str | None = None
+    quote: str
+
+
+class ChatAttachment(BaseModel):
+    filename: str
+    kind: str
+    size: int
+    chars: int
+    recognized_by: Literal["text_layer", "gigachat"]
+    truncated: bool = False
+
+
+class ChatFinding(BaseModel):
+    status: str
+    text: str
+    explanation: str
+    source: str | None = None
+    section: str | None = None
+    quote: str | None = None
+
+
+class ChatMessageOut(BaseModel):
+    id: str
+    role: Literal["user", "assistant"]
+    content: str
+    sources: list[ChatSource] = []
+    attachment: ChatAttachment | None = None
+    findings: list[ChatFinding] | None = None
+    mode: Mode | None = None
+    model: str | None = None
+    created_at: datetime
+
+
+class ChatConversationOut(BaseModel):
+    id: str
+    title: str
+    message_count: int
+    created_at: datetime
+    updated_at: datetime
+
+
+class ChatConversationDetail(ChatConversationOut):
+    messages: list[ChatMessageOut]
+
+
+class ChatSendRequest(BaseModel):
+    bank_id: str
+    conversation_id: str | None = None
+    content: str = Field(min_length=1)
+    mode: Mode | None = Field(default=None, description="По умолчанию live, если GigaChat подключён, иначе demo")
+
+    @field_validator("content")
+    @classmethod
+    def _c_len(cls, v: str) -> str:
+        v = v.strip()
+        if not v:
+            raise ValueError("Пустое сообщение")
+        if len(v) > get_settings().max_chat_message_chars:
+            raise ValueError(f"Сообщение длиннее {get_settings().max_chat_message_chars} символов")
+        return v
+
+
+class ChatSendResponse(BaseModel):
+    conversation: ChatConversationOut
+    user_message: ChatMessageOut
+    assistant_message: ChatMessageOut
+
+
+class ChatRenameRequest(BaseModel):
+    title: str = Field(min_length=1, max_length=120)

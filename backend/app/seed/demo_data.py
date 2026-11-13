@@ -13,18 +13,20 @@ from pathlib import Path
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.models import Bank, BankSettings, Document, Product
-from app.services.knowledge.ingest import DocumentMeta, ingest_text, ingest_upload
+from app.models import Bank, BankSettings, Product
+from app.services.knowledge.ingest import DocumentMeta, ingest_text
 
 log = logging.getLogger("safetone.seed")
 DOCS = Path(__file__).parent / "documents"
-LEGACY = Path(__file__).parent / "legacy"
 
-DEMO_BANK_SLUG = "demo-horizon"
-OTHER_BANK_SLUG = "demo-isolation-check"
+DEMO_BANK_SLUG = "yasny-bereg"
+BANK_NAME = "Банк «Ясный Берег» (DEMO)"
+# Earlier demo banks; removed on startup so the installation has exactly one bank.
+RETIRED_SLUGS = ("demo-horizon", "demo-isolation-check")
+OTHER_BANK_SLUG = "test-isolation-bank"  # created only by the test suite
 
 PRODUCTS = [
-    ("card-horizon-120", "Кредитная карта «Горизонт 120»", "credit_card",
+    ("card-bereg-120", "Кредитная карта «Берег 120»", "credit_card",
      "Кредитная карта с льготным периодом на покупки. Демонстрационный продукт."),
     ("loan-prostoy", "Потребительский кредит «Простой»", "loan",
      "Потребительский кредит без обеспечения. Демонстрационный продукт."),
@@ -32,16 +34,20 @@ PRODUCTS = [
      "Срочный вклад без пополнения. Демонстрационный продукт."),
     ("rko-start", "Расчётный счёт «Старт»", "account",
      "Расчётно-кассовое обслуживание для ИП и компаний. Демонстрационный продукт."),
+    ("debit-yasnaya", "Дебетовая карта «Ясная»", "debit_card",
+     "Бесплатная дебетовая карта с кэшбэком. Демонстрационный продукт."),
+    ("savings-priboy", "Накопительный счёт «Прибой»", "savings",
+     "Накопительный счёт с ежемесячной выплатой процентов. Демонстрационный продукт."),
+    ("mortgage-svoy-dom", "Ипотека «Свой дом»", "mortgage",
+     "Ипотечный кредит на покупку квартиры. Демонстрационный продукт."),
 ]
 
 DEMO_NOTE = "Демонстрационный документ: условия вымышлены."
-LAW_NOTE = ("Справочный пересказ, а не официальный текст. Актуальность редакции не подтверждена — "
-            "требуется сверка с официальным источником.")
 
 # (file, product_code|None, meta kwargs)
 BANK_DOCS = [
-    ("card_tariff_v1.md", "card-horizon-120", dict(
-        title="Тарифы по кредитной карте «Горизонт 120»", doc_type="tariff", document_key="card-horizon-tariffs",
+    ("card_tariff_v1.md", "card-bereg-120", dict(
+        title="Тарифы по кредитной карте «Берег 120»", doc_type="tariff", document_key="card-bereg-tariffs",
         document_date=date(2026, 2, 10), effective_from=date(2026, 3, 1), actuality_status="current")),
     ("loan_contract_v1.md", "loan-prostoy", dict(
         title="Общие условия договора потребительского кредита «Простой»", doc_type="contract",
@@ -61,34 +67,50 @@ BANK_DOCS = [
         title="Правила открытия, ведения и закрытия расчётного счёта", doc_type="internal",
         document_key="rko-rules", document_date=date(2025, 11, 20), effective_from=date(2025, 12, 1),
         actuality_status="current")),
+    ("debit_card_tariff.md", "debit-yasnaya", dict(
+        title="Тарифы по дебетовой карте «Ясная»", doc_type="tariff", document_key="debit-yasnaya-tariffs",
+        document_date=date(2026, 3, 1), effective_from=date(2026, 3, 15), actuality_status="current")),
+    ("savings_account.md", "savings-priboy", dict(
+        title="Условия накопительного счёта «Прибой»", doc_type="tariff", document_key="savings-priboy-terms",
+        document_date=date(2026, 5, 1), effective_from=date(2026, 5, 15), actuality_status="current")),
+    ("mortgage_terms.md", "mortgage-svoy-dom", dict(
+        title="Условия ипотечного кредита «Свой дом»", doc_type="contract", document_key="mortgage-svoy-dom-terms",
+        document_date=date(2026, 2, 1), effective_from=date(2026, 2, 15), actuality_status="current")),
+    ("about_bank.md", None, dict(
+        title="О банке «Ясный Берег»: история и контакты", doc_type="internal", document_key="about-bank",
+        document_date=date(2026, 1, 10), effective_from=date(2026, 1, 10), actuality_status="current")),
+    ("general_terms.md", None, dict(
+        title="Общие условия обслуживания физических лиц", doc_type="contract", document_key="general-terms",
+        document_date=date(2026, 1, 10), effective_from=date(2026, 2, 1), actuality_status="current")),
+    ("complaints_rules.md", None, dict(
+        title="Порядок рассмотрения обращений клиентов", doc_type="internal", document_key="complaints-rules",
+        document_date=date(2025, 12, 1), effective_from=date(2026, 1, 1), actuality_status="current")),
+    ("security_rules.md", None, dict(
+        title="Правила безопасности клиентов", doc_type="internal", document_key="security-rules",
+        document_date=date(2026, 4, 1), effective_from=date(2026, 4, 1), actuality_status="current")),
+    ("faq.md", None, dict(
+        title="Частые вопросы клиентов", doc_type="reference", document_key="faq",
+        document_date=date(2026, 6, 1), effective_from=date(2026, 6, 1), actuality_status="current")),
 ]
 
-GLOBAL_DOCS = [
-    ("law_353fz_excerpt.md", dict(
-        title="353-ФЗ «О потребительском кредите (займе)» — пересказ ст. 11", doc_type="law",
-        document_key="law-353fz-art11", document_date=date(2013, 12, 21),
-        source_url="http://pravo.gov.ru/", actuality_status="unverified")),
-    ("law_395_excerpt.md", dict(
-        title="395-1 «О банках и банковской деятельности» — пересказ ст. 29", doc_type="law",
-        document_key="law-395-1-art29", document_date=date(1990, 12, 2),
-        source_url="http://pravo.gov.ru/", actuality_status="unverified")),
-    ("law_177fz_excerpt.md", dict(
-        title="177-ФЗ «О страховании вкладов» — пересказ ст. 11", doc_type="law",
-        document_key="law-177fz-art11", document_date=date(2003, 12, 23),
-        source_url="http://pravo.gov.ru/", actuality_status="unverified")),
-]
+def retire_old_demo_banks(db: Session) -> None:
+    """Remove earlier demo banks (cascades to their documents, runs and chats)."""
+    for old in db.scalars(select(Bank).where(Bank.slug.in_(RETIRED_SLUGS), Bank.is_demo.is_(True))):
+        log.info("Removing retired demo bank %s", old.slug)
+        db.delete(old)
+    db.commit()
 
-LEGACY_DOCS = [
-    ("raschetny_schet.docx", "rko-start", dict(
-        title="Расчётный счёт — справочный материал (из предыдущей версии SafeTone)", doc_type="reference",
-        document_key="legacy-raschetny-schet", actuality_status="unverified",
-        actuality_note="Материал перенесён из исходного проекта. Дата и актуальность не подтверждены.")),
-    ("obshchie_usloviya_kreditovaniya.html", "loan-prostoy", dict(
-        title="Общие условия кредитования — справочный материал (из предыдущей версии SafeTone)",
-        doc_type="reference", document_key="legacy-obshchie-usloviya", actuality_status="unverified",
-        actuality_note="Типовая форма стороннего банка из исходного проекта. Не является документом "
-                       "демонстрационного банка; актуальность не подтверждена.")),
-]
+
+def seed_isolation_bank(db: Session) -> Bank:
+    """An empty second bank — the test suite uses it to prove tenant isolation."""
+    bank = db.scalar(select(Bank).where(Bank.slug == OTHER_BANK_SLUG))
+    if not bank:
+        bank = Bank(slug=OTHER_BANK_SLUG, name="Банк «Контроль изоляции» (TEST)", is_demo=True)
+        db.add(bank)
+        db.flush()
+        db.add(BankSettings(bank_id=bank.id))
+        db.commit()
+    return bank
 
 
 def seed_demo(db: Session) -> Bank:
@@ -96,10 +118,11 @@ def seed_demo(db: Session) -> Bank:
     if bank:
         return bank
     log.info("Seeding demo dataset")
-    bank = Bank(slug=DEMO_BANK_SLUG, name="Банк «Горизонт» (DEMO)", is_demo=True)
+    bank = Bank(slug=DEMO_BANK_SLUG, name=BANK_NAME, is_demo=True)
     db.add(bank)
     db.flush()
-    db.add(BankSettings(bank_id=bank.id))
+    # The bank is fictional, so its documents may be shown to GigaChat as context.
+    db.add(BankSettings(bank_id=bank.id, allow_documents_to_llm=True))
     products: dict[str, Product] = {}
     for code, name, category, descr in PRODUCTS:
         p = Product(bank_id=bank.id, code=code, name=name, category=category, description=descr, is_demo=True)
@@ -107,28 +130,10 @@ def seed_demo(db: Session) -> Bank:
         products[code] = p
     db.flush()
 
-    # A second, empty bank used to demonstrate / test tenant isolation.
-    other = Bank(slug=OTHER_BANK_SLUG, name="Банк «Контроль изоляции» (DEMO)", is_demo=True)
-    db.add(other)
-    db.flush()
-    db.add(BankSettings(bank_id=other.id))
-
     for fname, code, meta in BANK_DOCS:
         ingest_text(db, bank_id=bank.id, text=(DOCS / fname).read_text("utf-8"), meta=DocumentMeta(
             product_id=products[code].id if code else None, is_demo=True,
             scope_label=f"{bank.name} · {products[code].name}" if code else bank.name,
             actuality_note=DEMO_NOTE, **meta))
-    for fname, meta in GLOBAL_DOCS:
-        existing = db.scalar(select(Document).where(Document.bank_scope == "global",
-                                                   Document.document_key == meta["document_key"]))
-        if existing:
-            continue
-        ingest_text(db, bank_id=None, text=(DOCS / fname).read_text("utf-8"), meta=DocumentMeta(
-            is_demo=True, scope_label="Российская Федерация · все банки", actuality_note=LAW_NOTE, **meta))
-    for fname, code, meta in LEGACY_DOCS:
-        path = LEGACY / fname
-        if path.exists():
-            ingest_upload(db, bank_id=bank.id, filename=fname, data=path.read_bytes(), meta=DocumentMeta(
-                product_id=products[code].id, scope_label=f"{bank.name} · справочно", **meta))
     db.commit()
     return bank

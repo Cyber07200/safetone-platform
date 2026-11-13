@@ -62,8 +62,10 @@ def test_list_includes_bank_and_global_documents(client, bank_id):
     assert any(d["bank_id"] == bank_id for d in docs)
     rko = [d for d in docs if d["document_key"] == "rko-start-tariffs"]
     assert {(d["version"], d["effective_actuality"]) for d in rko} == {(1, "superseded"), (2, "current")}
-    law = next(d for d in docs if d["doc_type"] == "law")
-    assert law["effective_actuality"] == "unverified"  # never assumed current
+    laws = [d for d in docs if d["doc_type"] == "law"]
+    assert {d["document_key"] for d in laws} >= {"law-395-1", "law-353-fz", "law-177-fz", "gk-rf-ch-42-44-45"}
+    assert all(d["source_url"].startswith("https://base.garant.ru/") and "pravo.gov.ru" in d["actuality_note"]
+               for d in laws)
 
 
 def test_upload_markdown_and_retrieve_chunks(client, kb_bank):

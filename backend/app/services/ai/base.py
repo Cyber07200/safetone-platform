@@ -22,6 +22,7 @@ Task = Literal["generation", "claim_extraction", "legal_verification", "linguist
 class Message:
     role: Role
     content: str
+    attachments: list[str] | None = None  # provider file ids (GigaChat /files)
 
 
 @dataclass

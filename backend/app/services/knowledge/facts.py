@@ -107,9 +107,14 @@ def _to_float(int_part: str, frac: str | None) -> float:
     return v
 
 
+# «…49,9% годовых плюс комиссия 3,9%…»: a connector followed by a new subject starts a new
+# fact. «3,9% от суммы плюс 390 ₽» (no new subject) stays one clause.
+_NEW_SUBJECT = r"\s(?:плюс|и|а\s+также)\s+(?=(?:[а-яё]+\s+)?(?:комисси|процентн|ставк|плат[аеуы]\b|неустойк|штраф|лимит|льготн))"
+
+
 def _clauses(sentence: str) -> list[tuple[int, int]]:
     spans, start = [], 0
-    for m in re.finditer(r";|,\s+(?!(?:но|а|и|или)?\s*(?:не\s+)?(?:менее|более|позднее|ранее)\b)|\s—\s(?=[а-яё]+\s(?:[а-яё]+\s)?[—–-])", sentence):
+    for m in re.finditer(r";|,\s+(?!(?:но|а|и|или)?\s*(?:не\s+)?(?:менее|более|позднее|ранее)\b)|\s—\s(?=[а-яё]+\s(?:[а-яё]+\s)?[—–-])|" + _NEW_SUBJECT, sentence, re.I):
         spans.append((start, m.start()))
         start = m.end()
     spans.append((start, len(sentence)))
@@ -150,10 +155,15 @@ def extract_mentions(sentence: str) -> list[Mention]:
     # that carry no number of their own ("Снятие наличных, в т.ч. …, — 3%").
     clause_spans = _clauses(sentence)
     clause_has_mention = [any(s <= m.start < e for m in mentions) for s, e in clause_spans]
+    connector_ends = {m.end() for m in re.finditer(_NEW_SUBJECT, sentence, re.I)}
     for men in mentions:
         ci = next((i for i, (s, e) in enumerate(clause_spans) if s <= men.start < e), 0)
         cs, ce = clause_spans[ci]
         t = topics_of(sentence[cs:ce])
+        if ci and cs in connector_ends:
+            # «При снятии наличных ставка 49,9% плюс комиссия 3,9%»: the case applies to both facts
+            ps, pe = clause_spans[ci - 1]
+            t |= topics_of(sentence[ps:pe]) - PRIMARY_TOPICS
         if not (t - PRIMARY_TOPICS - _WEAK_QUALIFIERS):
             j = ci - 1
             while j >= 0 and not clause_has_mention[j]:
@@ -219,7 +229,15 @@ SPECIAL_CASES = frozenset({"early", "overdue", "closing", "insurance", "cash", "
 
 
 def special_case_mismatch(claim: Mention, source: Mention) -> bool:
-    return bool((source.topics & SPECIAL_CASES) - claim.topics)
+    # A source listing several cases («снятие наличных и переводы — 49,9%») applies to
+    # each of them, so it is a mismatch only when the claim names none of its cases.
+    cases = source.topics & SPECIAL_CASES
+    if cases and not (cases & claim.topics):
+        return True
+    # Symmetric: a claim about a special case («заявление на досрочное погашение — за 30 дней»)
+    # cannot be settled by a source that never mentions that case («жалоба — 30 дней»).
+    claim_cases = claim.topics & SPECIAL_CASES
+    return bool(claim_cases) and not (claim_cases & source.topics)
 
 
 def is_condition(m: Mention, sentence_mentions: list[Mention]) -> bool:

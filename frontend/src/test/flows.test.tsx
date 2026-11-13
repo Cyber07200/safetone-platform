@@ -12,7 +12,7 @@ const base = {
   "GET /api/v1/products": [{ id: "p1", bank_id: "b1", code: "card", name: "Карта", category: "credit_card", description: "", is_demo: true }],
   "GET /api/v1/scenarios": SCENARIOS,
   "GET /api/v1/providers": { live_available: false, default_provider: "auto", routing_policy: "policy", providers: [
-    { name: "yandex", label: "YandexGPT", model: null, configured: false, missing_config: ["YANDEX_API_KEY"], quality_tier: 2, cost_per_1k_tokens: null, supports_json: true, tasks: [], circuit_open: false, latency_ema_ms: null, calls: 0, failures: 0, last_error: null, status: "not_configured" }] },
+    { name: "gigachat", label: "GigaChat", model: null, configured: false, missing_config: ["GIGACHAT_AUTH_KEY"], quality_tier: 2, cost_per_1k_tokens: null, supports_json: false, tasks: [], circuit_open: false, latency_ema_ms: null, calls: 0, failures: 0, last_error: null, status: "not_configured" }] },
   "GET /api/v1/settings": { bank: { bank_id: "b1", default_mode: "demo", default_provider: "auto", default_tone: "neutral", quality_preference: "balanced", allow_documents_to_llm: false, retention_days: 90 }, platform: { tones: {}, max_upload_mb: 10, allowed_formats: [] } },
   "GET /api/v1/history": { items: [], total: 0, limit: 5, offset: 0 },
 };
@@ -67,7 +67,8 @@ describe("History", () => {
   it("renders stored runs", async () => {
     mockApi({ ...base, "GET /api/v1/history": { items: [RUN], total: 1, limit: 15, offset: 0 } });
     renderWithApp(<History />);
-    expect(await screen.findByText("Какая ставка?")).toBeInTheDocument();
+    // Rendered twice: phone list + desktop table (CSS picks one; jsdom shows both).
+    expect(await screen.findAllByText("Какая ставка?")).toHaveLength(2);
     expect(screen.getByRole("table")).toHaveTextContent("READY");
   });
   it("error state when API is down", async () => {

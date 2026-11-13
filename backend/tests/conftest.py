@@ -12,9 +12,10 @@ os.environ["DATABASE_URL"] = f"sqlite:///{(_TMP / 'test.db').as_posix()}"
 os.environ["STORAGE_DIR"] = str(_TMP / "storage")
 os.environ["SAFETONE_MODE"] = "demo"
 os.environ["AUTO_SEED_DEMO"] = "true"
-for key in ("YANDEX_API_KEY", "YANDEX_IAM_TOKEN", "YANDEX_FOLDER_ID", "YANDEX_MODEL_URI", "GIGACHAT_AUTH_KEY",
-            "GIGACHAT_CLIENT_ID", "GIGACHAT_CLIENT_SECRET", "OPENAI_API_KEY", "OPENAI_BASE_URL", "OPENAI_MODEL"):
+for key in ("GIGACHAT_AUTH_KEY", "GIGACHAT_CLIENT_ID", "GIGACHAT_CLIENT_SECRET"):
     os.environ[key] = ""
+# Fixed test-only key (not used anywhere else).
+os.environ["CHAT_ENCRYPTION_KEY"] = "MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY="
 
 import pytest  # noqa: E402
 from fastapi.testclient import TestClient  # noqa: E402
@@ -26,9 +27,12 @@ get_settings.cache_clear()
 from app.main import app, bootstrap  # noqa: E402
 from app.db.session import SessionLocal  # noqa: E402
 from app.models import Bank, Product  # noqa: E402
-from app.seed.demo_data import DEMO_BANK_SLUG, OTHER_BANK_SLUG  # noqa: E402
+from app.seed.demo_data import DEMO_BANK_SLUG, OTHER_BANK_SLUG, seed_isolation_bank  # noqa: E402
 
 bootstrap()
+_s = SessionLocal()
+seed_isolation_bank(_s)
+_s.close()
 
 
 @pytest.fixture(scope="session")

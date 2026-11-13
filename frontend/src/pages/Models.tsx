@@ -11,11 +11,13 @@ const STATUS: Record<ProviderInfo["status"], { label: string; tone: "ok" | "warn
   not_configured: { label: "Не настроен", tone: "muted" }, configured: { label: "Настроен, не проверялся", tone: "info" },
   ok: { label: "Работает", tone: "ok" }, degraded: { label: "Есть ошибки", tone: "warn" }, unavailable: { label: "Временно исключён", tone: "bad" },
 };
-const ENV: Record<string, string[]> = {
-  yandex: ["YANDEX_API_KEY=…", "YANDEX_FOLDER_ID=…", "# опционально: YANDEX_MODEL_URI=gpt://<folder>/yandexgpt/latest"],
-  gigachat: ["GIGACHAT_AUTH_KEY=…  # или CLIENT_ID + CLIENT_SECRET", "GIGACHAT_SCOPE=GIGACHAT_API_PERS", "# при ошибке TLS: GIGACHAT_CA_BUNDLE=/path/russian_trusted_root_ca.pem"],
-  openai: ["OPENAI_API_KEY=…", "OPENAI_BASE_URL=https://…/v1", "OPENAI_MODEL=…"],
-};
+const ENV = ["# бесплатно для физлиц (Freemium): developers.sber.ru/studio", "GIGACHAT_AUTH_KEY=…  # Authorization key", "GIGACHAT_SCOPE=GIGACHAT_API_PERS", "GIGACHAT_MODEL=GigaChat-2-Max", "# при ошибке TLS: GIGACHAT_CA_BUNDLE=/path/russian_trusted_root_ca.pem"];
+const USES = [
+  ["Чат-ассистент", "Отвечает с опорой на законы и документы банка из базы знаний, помнит весь диалог."],
+  ["Генерация ответа", "Черновик ответа клиенту в AI Workspace (Live Mode)."],
+  ["Юридическая проверка", "Дополнительная LLM-верификация утверждений — только с цитатами из источников."],
+  ["Понятный язык", "Переписывание ответа в выбранном тоне с проверкой сохранения смысла."],
+];
 
 function ProviderCard({ p }: { p: ProviderInfo }) {
   const qc = useQueryClient();
@@ -39,7 +41,7 @@ function ProviderCard({ p }: { p: ProviderInfo }) {
       {!p.configured && (
         <div className="mt-4 rounded-lg bg-ink-50 p-3">
           <div className="mb-1.5 flex items-center gap-1.5 text-[12px] font-medium text-ink-700"><KeyRound className="h-3.5 w-3.5" />Добавьте в backend/.env:</div>
-          <pre className="overflow-x-auto font-mono text-[11px] leading-relaxed text-ink-600">{ENV[p.name]?.join("\n")}</pre>
+          <pre className="overflow-x-auto font-mono text-[11px] leading-relaxed text-ink-600">{ENV.join("\n")}</pre>
         </div>
       )}
       {p.last_error && <p className="mt-3 text-[12px] text-bad-700">Последняя ошибка: {p.last_error}</p>}
@@ -56,22 +58,24 @@ export default function Models() {
   const q = useProviders();
   return (
     <>
-      <PageHeader eyebrow="Model Settings" title="AI-провайдеры" description="SafeTone не содержит собственной языковой модели: он работает с готовыми моделями через API. Статусы ниже отражают реальную конфигурацию и результаты вызовов." />
+      <PageHeader eyebrow="Языковая модель" title="GigaChat" description="SafeTone работает с GigaChat через API. Статус ниже отражает реальную конфигурацию и результаты вызовов." />
       {q.isError && <ErrorState error={q.error} onRetry={() => q.refetch()} />}
       {q.isLoading && <SkeletonRows rows={3} />}
       {q.data && (
         <>
           {!q.data.live_available && (
             <div className="mb-4 rounded-xl2 border border-warn-600/25 bg-warn-50 p-4 text-[13px] text-warn-700">
-              Ни один провайдер не настроен — доступен только <b>Demo Mode</b>. Добавьте ключи в <span className="font-mono">backend/.env</span> и перезапустите backend, чтобы включить Live AI.
+              GigaChat не подключён — доступен только <b>Demo Mode</b>. Добавьте ключ в <span className="font-mono">backend/.env</span> и перезапустите backend, чтобы включить Live AI.
             </div>
           )}
-          <div className="grid gap-4 lg:grid-cols-3">{q.data.providers.map((p) => <ProviderCard key={p.name} p={p} />)}</div>
-          <Card className="mt-4 p-5">
-            <div className="label-mono mb-2">Политика маршрутизации</div>
-            <p className="text-[13px] leading-relaxed text-ink-700">{q.data.routing_policy}</p>
-            <p className="mt-2 text-[12px] text-ink-500">Автовыбор — это политика на основе известной конфигурации, цен из вашего договора и наблюдаемой доступности; он не гарантирует самую дешёвую или лучшую модель. Модели вызываются последовательно, не параллельно. Ручной выбор провайдера — в разделе «Настройки» и в Workspace.</p>
-          </Card>
+          <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
+            {q.data.providers.map((p) => <ProviderCard key={p.name} p={p} />)}
+            <Card className="p-5">
+              <div className="label-mono mb-3">Где SafeTone использует GigaChat</div>
+              <ul className="space-y-3">{USES.map(([t, d]) => <li key={t}><div className="text-[14px] font-medium text-ink-900">{t}</div><p className="mt-0.5 text-[13px] leading-relaxed text-ink-600">{d}</p></li>)}</ul>
+              <p className="mt-4 border-t hairline pt-3 text-[12px] leading-relaxed text-ink-500">Повторы при сетевых сбоях, тайм-ауты и временное отключение при серии ошибок. Юридическая проверка по источникам работает и без модели.</p>
+            </Card>
+          </div>
         </>
       )}
     </>

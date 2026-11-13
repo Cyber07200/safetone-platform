@@ -2,7 +2,7 @@
 
 > **Юридическая точность. Понятный язык. Доверие в каждом ответе.**
 
-SafeTone принимает ответ готовой языковой модели (YandexGPT, GigaChat, любая OpenAI-совместимая),
+SafeTone принимает ответ языковой модели GigaChat,
 проверяет каждое существенное утверждение по договорам, тарифам и нормативным источникам банка,
 исправляет ошибки **только на основании источника**, переписывает ответ понятным языком и
 проверяет, что упрощение не изменило юридический смысл. Каждое решение сохраняется в аудит.
@@ -62,7 +62,7 @@ cd frontend && npm test
 
 | | Demo Mode | Live AI Mode |
 |---|---|---|
-| Нужны ключи | нет | да, хотя бы один провайдер |
+| Нужны ключи | нет | да, ключ GigaChat |
 | Исходный ответ | заранее подготовленный сценарий **или** ответ, вставленный пользователем | генерация выбранной моделью (или вставленный ответ) |
 | Юридический слой | выполняется по-настоящему (доказательная проверка по базе знаний) | то же + LLM-верификация (если разрешена передача документов) |
 | Лингвистический слой | офлайн-редактор (словарь стиля) | LLM-редактор, при ошибке/искажении смысла — офлайн-редактор |
@@ -89,7 +89,7 @@ Demo Mode никогда не выдаёт подготовленный текс
 ### Переключение Demo / Live
 
 - `SAFETONE_MODE=demo|live` в `backend/.env` — режим по умолчанию.
-- В Workspace переключатель «Режим AI». Live активен только если настроен хотя бы один провайдер;
+- В Workspace переключатель «Режим AI». Live активен только если настроен GigaChat;
   без ключей API возвращает `409 LIVE_MODE_UNAVAILABLE` с предложением перейти в Demo.
 
 ---
@@ -97,20 +97,7 @@ Demo Mode никогда не выдаёт подготовленный текс
 ## Подключение реальных AI API
 
 Все ключи — только в `backend/.env` (файл в `.gitignore`). После изменения перезапустите backend.
-Статус провайдеров — страница «Модели» (кнопка «Проверить доступность» делает реальный короткий запрос).
-
-### YandexGPT (Yandex AI Studio)
-
-1. Создайте сервисный аккаунт с ролью `ai.languageModels.user`, выпустите API-ключ.
-2. В `.env`:
-   ```
-   YANDEX_API_KEY=<ключ>
-   YANDEX_FOLDER_ID=<id каталога>
-   # опционально, по умолчанию gpt://<folder>/yandexgpt-lite/latest
-   YANDEX_MODEL_URI=gpt://<folder>/yandexgpt/latest
-   ```
-   Используется `POST https://llm.api.cloud.yandex.net/foundationModels/v1/completion`,
-   заголовок `Authorization: Api-Key …` (или `YANDEX_IAM_TOKEN` → `Bearer`).
+Статус GigaChat — страница «GigaChat» (кнопка «Проверить доступность» делает реальный короткий запрос).
 
 ### GigaChat
 
@@ -124,23 +111,10 @@ OAuth: `https://ngw.devices.sberbank.ru:9443/api/v2/oauth` (токен 30 мин
 (прежний `https://gigachat.devices.sberbank.ru/api/v1` можно указать в `GIGACHAT_BASE_URL`).
 Если TLS-проверка не проходит — укажите путь к сертификату НУЦ Минцифры в `GIGACHAT_CA_BUNDLE`.
 
-### OpenAI-совместимые провайдеры
+### Устойчивость вызовов
 
-```
-OPENAI_API_KEY=...
-OPENAI_BASE_URL=https://<host>/v1
-OPENAI_MODEL=<model>
-OPENAI_PROVIDER_LABEL=<название для UI>
-```
-
-### Маршрутизация
-
-`DEFAULT_AI_PROVIDER=auto|yandex|gigachat|openai`. В режиме `auto` AI Router ранжирует
-**настроенные** провайдеры по поддержке задачи, приоритету банка (экономия / баланс / качество),
-цене из `*_COST_PER_1K_TOKENS` (цены вашего договора; неизвестная цена считается нейтральной) и
-наблюдаемой задержке. Вызовы последовательные (не параллельные), ограниченные повторы
-(`AI_MAX_RETRIES`) на тайм-ауты/429/5xx, fallback на следующий провайдер, circuit breaker после 3 ошибок подряд.
-Это политика на основе известной конфигурации — она не гарантирует самую дешёвую или лучшую модель.
+Ограниченные повторы (`AI_MAX_RETRIES`) на тайм-ауты/429/5xx, circuit breaker после 3 ошибок подряд
+(GigaChat временно исключается на 60 секунд). Все попытки записываются в аудит.
 
 **Передача документов банка во внешние модели** по умолчанию выключена (Настройки → «Передавать документы
 банка во внешние LLM»). Без неё LLM получает только вопрос, а проверка идёт доказательным движком локально.
@@ -162,20 +136,22 @@ backend/
     main.py                 FastAPI, CORS, лимиты тела, заголовки безопасности, раздача SPA
     core/                   config (.env), единый формат ошибок, логирование с маскированием секретов
     db/                     SQLAlchemy engine/session, программный Alembic upgrade
-    models/                 Bank, Product, BankSettings, Document, Chunk, ProcessingRun
+    models/                 Bank, Product, BankSettings, Document, Chunk, ProcessingRun, ChatConversation, ChatMessage
     schemas/                Pydantic-контракт API
     repositories/           доступ к данным с обязательной фильтрацией по банку
     services/
-      ai/                   AIProvider, адаптеры Yandex/GigaChat/OpenAI-compatible, AIRouter, промпты
+      ai/                   AIProvider, адаптер GigaChat, AIRouter (повторы, circuit breaker), промпты
+      chat.py               чат-ассистент: память диалога, поиск по законам, шифрование истории
       knowledge/            извлечение текста, чанкинг, BM25-поиск, парсер фактов, версии/актуальность
       legal/                утверждения, доказательная проверка, политика рисков, корректировка
       linguistic/           офлайн-редактор, 4 тона, проверка сохранения смысла
       demo/                 10 демо-сценариев
       pipeline.py           оркестратор этапов со статусами в БД
-    api/routes/             process/history, documents, platform (health, banks, products, providers, settings, stats)
-    seed/                   демо-банк, документы (DEMO), справочные материалы исходного проекта
+    api/routes/             process/history, documents, chat, platform (health, banks, products, providers, settings, stats)
+    seed/                   демо-банк, документы (DEMO), laws/ — тексты банковских законов РФ
   alembic/                  миграции
-  tests/                    123 теста
+  scripts/fetch_laws.py     обновление текстов законов (ГАРАНТ)
+  tests/                    тесты pytest
 frontend/
   src/app, layouts, pages, features/{landing,workspace,audit}, components/ui, hooks, services, types, lib, test
 ```
@@ -192,7 +168,11 @@ frontend/
 | GET/POST | `/api/v1/documents` | список / загрузка (multipart, PDF/DOCX/HTML/TXT/MD, ≤10 МБ) |
 | GET/PATCH/DELETE | `/api/v1/documents/{id}?bank_id=` | документ с фрагментами / актуальность / удаление |
 | GET | `/api/v1/banks`, `/api/v1/products`, `/api/v1/scenarios` | каталог |
-| GET | `/api/v1/providers`, POST `/api/v1/providers/{name}/check` | провайдеры и проверка |
+| GET | `/api/v1/providers`, POST `/api/v1/providers/gigachat/check` | статус GigaChat и проверка |
+| GET | `/api/v1/chat/conversations?bank_id=` | диалоги этого браузера (заголовок `X-Chat-Owner`) |
+| POST | `/api/v1/chat/messages` | сообщение ассистенту; без `conversation_id` — новый диалог |
+| POST | `/api/v1/chat/documents` | документ на проверку (multipart: PDF, DOCX, TXT, JPG, PNG ≤10 МБ) |
+| GET/PATCH/DELETE | `/api/v1/chat/conversations/{id}` | диалог с сообщениями / переименование / удаление |
 | GET/PUT | `/api/v1/settings?bank_id=` | настройки банка |
 | GET | `/api/v1/stats?bank_id=` | показатели для обзора |
 

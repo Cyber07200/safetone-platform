@@ -26,7 +26,7 @@ def test_openapi_is_available(client):
 def test_catalog(client, bank_id):
     assert any(b["id"] == bank_id for b in client.get("/api/v1/banks").json())
     prods = client.get("/api/v1/products", params={"bank_id": bank_id}).json()
-    assert {p["code"] for p in prods} >= {"card-horizon-120", "loan-prostoy", "deposit-nadezhny", "rko-start"}
+    assert {p["code"] for p in prods} >= {"card-bereg-120", "loan-prostoy", "deposit-nadezhny", "rko-start"}
     assert all(p["is_demo"] for p in prods)
     sc = client.get("/api/v1/scenarios", params={"bank_id": bank_id}).json()
     assert len(sc) >= 8 and all(s["product_id"] for s in sc)
@@ -61,7 +61,7 @@ def test_demo_mode_requires_scenario_or_answer(client, bank_id):
 
 
 def test_demo_mode_checks_user_supplied_answer(client, bank_id, products):
-    d = process(client, bank_id, question="Ставка по карте?", product_id=products["card-horizon-120"],
+    d = process(client, bank_id, question="Ставка по карте?", product_id=products["card-bereg-120"],
                 answer_text="Процентная ставка по операциям покупок — 25% годовых.").json()
     assert d["answer_origin"] == "user" and d["stages"][0]["method"] == "user_provided"
     assert "29,9%" in d["final_answer"]
@@ -167,9 +167,9 @@ def test_settings_roundtrip(client, bank_id):
 def test_providers_endpoint_reports_honest_status(client):
     d = client.get("/api/v1/providers").json()
     assert d["live_available"] is False
-    assert {p["name"] for p in d["providers"]} == {"yandex", "gigachat", "openai"}
+    assert {p["name"] for p in d["providers"]} == {"gigachat"}
     assert all(p["status"] == "not_configured" and p["missing_config"] for p in d["providers"])
-    chk = client.post("/api/v1/providers/yandex/check").json()
+    chk = client.post("/api/v1/providers/gigachat/check").json()
     assert chk["ok"] is False and chk["code"] == "PROVIDER_NOT_CONFIGURED"
 
 

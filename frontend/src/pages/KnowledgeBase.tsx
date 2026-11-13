@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { AnimatePresence, motion } from "framer-motion";
 import { FileText, Globe2, ShieldAlert, Trash2, Upload, X } from "lucide-react";
@@ -6,21 +6,22 @@ import { api, ApiError } from "../services/api";
 import { useBank } from "../hooks/useBank";
 import { useProducts, useSettings } from "../hooks/queries";
 import type { DocumentItem } from "../types/api";
-import { ActualityBadge, Badge, Button, Card, DemoBadge, EmptyState, ErrorState, Field, PageHeader, SkeletonRows } from "../components/ui";
+import { ActualityBadge, Badge, Button, Card, DemoBadge, EASE, EmptyState, ErrorState, Field, PageHeader, SkeletonRows, useDismiss } from "../components/ui";
 import { DOC_TYPES } from "../lib/labels";
 import { fmtBytes, fmtDate } from "../lib/format";
 
 function Drawer({ open, onClose, title, children }: { open: boolean; onClose: () => void; title: string; children: React.ReactNode }) {
+  useDismiss(open, onClose);
   return (
     <AnimatePresence>
       {open && (
         <motion.div className="fixed inset-0 z-50" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
-          <div className="absolute inset-0 bg-ink-950/30" onClick={onClose} />
-          <motion.aside role="dialog" aria-modal="true" aria-label={title} initial={{ x: 40, opacity: 0 }} animate={{ x: 0, opacity: 1 }} exit={{ x: 40, opacity: 0 }} transition={{ duration: 0.2 }}
-            className="absolute inset-y-0 right-0 flex w-full max-w-[560px] flex-col bg-white shadow-lift">
-            <div className="flex items-center justify-between border-b hairline px-5 py-3.5">
-              <h2 className="text-[15px] font-semibold">{title}</h2>
-              <button onClick={onClose} aria-label="Закрыть" className="rounded-md p-1.5 hover:bg-ink-100"><X className="h-5 w-5" /></button>
+          <div className="absolute inset-0 bg-black/25 backdrop-blur-[2px]" onClick={onClose} />
+          <motion.aside role="dialog" aria-modal="true" aria-label={title} initial={{ x: "100%" }} animate={{ x: 0 }} exit={{ x: "100%" }} transition={{ duration: 0.5, ease: EASE }}
+            className="absolute inset-y-0 right-0 flex w-full max-w-[560px] flex-col bg-white shadow-lift sm:inset-y-2 sm:right-2 sm:rounded-4xl">
+            <div className="flex items-center justify-between border-b hairline px-6 py-4">
+              <h2 className="text-[17px] font-semibold tracking-[-0.02em]">{title}</h2>
+              <button onClick={onClose} aria-label="Закрыть" autoFocus className="grid h-8 w-8 place-items-center rounded-full bg-ink-50 text-ink-600 hover:bg-ink-100"><X className="h-4 w-4" /></button>
             </div>
             <div className="flex-1 overflow-y-auto p-5">{children}</div>
           </motion.aside>
@@ -130,6 +131,19 @@ function DocumentDetail({ id, onClose }: { id: string; onClose: () => void }) {
   );
 }
 
+function DocRow({ d, onOpen }: { d: DocumentItem; onOpen: (id: string) => void }) {
+  return (
+    <button onClick={() => onOpen(d.id)} className="flex w-full flex-wrap items-center gap-3 border-t hairline px-5 py-3.5 text-left transition-colors duration-200 first:border-t-0 hover:bg-ink-50">
+      <FileText className="h-4 w-4 shrink-0 text-ink-400" />
+      <span className="min-w-[12rem] flex-1"><span className="line-clamp-2 text-[14px] font-medium text-ink-900">{d.title}</span>
+        <span className="block text-[12px] text-ink-500">{DOC_TYPES[d.doc_type]} · v{d.version} · {d.product_name ?? (d.is_global ? "все банки" : "все продукты")} · {d.chunk_count} фрагм.</span></span>
+      {d.security_flags.length > 0 && <ShieldAlert className="h-4 w-4 text-bad-600" aria-label="Подозрение на prompt injection" />}
+      {d.is_demo && <DemoBadge />}
+      <ActualityBadge a={d.effective_actuality} />
+    </button>
+  );
+}
+
 export default function KnowledgeBase() {
   const { bankId } = useBank();
   const [type, setType] = useState("");
@@ -141,40 +155,32 @@ export default function KnowledgeBase() {
     q.data?.forEach((d) => (d.is_global ? g.global : g.bank).push(d));
     return g;
   }, [q.data]);
-
-  const Row = ({ d }: { d: DocumentItem }) => (
-    <button onClick={() => setSelected(d.id)} className="flex w-full flex-wrap items-center gap-3 border-t hairline px-4 py-3 text-left transition-colors first:border-t-0 hover:bg-brand-50/40">
-      <FileText className="h-4 w-4 shrink-0 text-ink-400" />
-      <span className="min-w-0 flex-1"><span className="block truncate text-[14px] font-medium text-ink-900">{d.title}</span>
-        <span className="block text-[12px] text-ink-500">{DOC_TYPES[d.doc_type]} · v{d.version} · {d.product_name ?? (d.is_global ? "все банки" : "все продукты")} · {d.chunk_count} фрагм.</span></span>
-      {d.security_flags.length > 0 && <ShieldAlert className="h-4 w-4 text-bad-600" aria-label="Подозрение на prompt injection" />}
-      {d.is_demo && <DemoBadge />}
-      <ActualityBadge a={d.effective_actuality} />
-    </button>
-  );
+  useEffect(() => { setSelected(null); }, [bankId]);
+  const closeUpload = useCallback(() => setUploadOpen(false), []);
+  const closeDetail = useCallback(() => setSelected(null), []);
 
   return (
     <>
       <PageHeader eyebrow="Knowledge Base" title="База знаний" description="Источники для доказательной проверки: договоры, тарифы, внутренние документы банка и общие нормативные источники. Статус актуальности определяется датами действия и версиями, а не датой загрузки."
         actions={<Button icon={<Upload className="h-4 w-4" />} onClick={() => setUploadOpen(true)}>Загрузить документ</Button>} />
-      <div className="mb-4 flex flex-wrap gap-1.5">
+      <div className="mb-5 flex flex-wrap gap-1.5" role="group" aria-label="Тип документа">
         {[["", "Все"], ...Object.entries(DOC_TYPES)].map(([k, v]) => (
-          <button key={k} onClick={() => setType(k)} className={`rounded-full px-3 py-1 text-[13px] font-medium transition-colors ${type === k ? "bg-ink-900 text-white" : "bg-white text-ink-600 ring-1 ring-ink-200 hover:text-ink-900"}`}>{v}</button>
+          <button key={k} onClick={() => setType(k)} aria-pressed={type === k} className={`rounded-full px-3.5 py-1.5 text-[13px] font-medium transition-colors duration-200 ${type === k ? "bg-ink-900 text-white" : "bg-ink-50 text-ink-700 hover:bg-ink-100"}`}>{v}</button>
         ))}
       </div>
       {q.isError && <ErrorState error={q.error} onRetry={() => q.refetch()} />}
       {q.isLoading && <SkeletonRows rows={6} />}
       {q.data && q.data.length === 0 && <EmptyState title="Документов нет" description="Загрузите договор или тариф, чтобы SafeTone мог проверять ответы по нему." action={<Button size="sm" onClick={() => setUploadOpen(true)}>Загрузить</Button>} />}
       {q.data && q.data.length > 0 && (
-        <div className="space-y-5">
-          {groups.bank.length > 0 && <div><div className="label-mono mb-2">Документы банка · {groups.bank.length}</div><Card className="overflow-hidden">{groups.bank.map((d) => <Row key={d.id} d={d} />)}</Card></div>}
+        <div className="space-y-6">
+          {groups.bank.length > 0 && <div><div className="label-mono mb-2">Документы банка · {groups.bank.length}</div><Card className="overflow-hidden">{groups.bank.map((d) => <DocRow key={d.id} d={d} onOpen={setSelected} />)}</Card></div>}
           {groups.global.length > 0 && <div><div className="label-mono mb-2 flex items-center gap-1.5"><Globe2 className="h-3.5 w-3.5" />Общие нормативные источники · {groups.global.length}</div>
-            <Card className="overflow-hidden">{groups.global.map((d) => <Row key={d.id} d={d} />)}</Card>
-            <p className="mt-2 text-[12px] text-ink-500">Демонстрационные пересказы законов не являются официальными текстами: их актуальность не подтверждена, поэтому утверждения, подтверждённые только ими, получают статус OUTDATED SOURCE.</p></div>}
+            <Card className="overflow-hidden">{groups.global.map((d) => <DocRow key={d.id} d={d} onOpen={setSelected} />)}</Card>
+            <p className="mt-2 text-[12px] text-ink-500">Действующие тексты законов по данным справочной системы ГАРАНТ (дата редакции — в карточке закона). Официальный источник — pravo.gov.ru.</p></div>}
         </div>
       )}
-      <Drawer open={uploadOpen} onClose={() => setUploadOpen(false)} title="Загрузка документа"><UploadForm onDone={() => setUploadOpen(false)} /></Drawer>
-      <Drawer open={!!selected} onClose={() => setSelected(null)} title="Документ">{selected && <DocumentDetail id={selected} onClose={() => setSelected(null)} />}</Drawer>
+      <Drawer open={uploadOpen} onClose={closeUpload} title="Загрузка документа"><UploadForm onDone={closeUpload} /></Drawer>
+      <Drawer open={!!selected} onClose={closeDetail} title="Документ">{selected && <DocumentDetail id={selected} onClose={closeDetail} />}</Drawer>
     </>
   );
 }

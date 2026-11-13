@@ -1,10 +1,10 @@
-import { useState } from "react";
+import { useDeferredValue, useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { ChevronLeft, ChevronRight, Search } from "lucide-react";
 import { api } from "../services/api";
 import { useBank } from "../hooks/useBank";
-import { Badge, Button, Card, EmptyState, ErrorState, PageHeader, ResultBadge, RiskBadge, SkeletonRows } from "../components/ui";
+import { Badge, Button, Card, EmptyState, ErrorState, PageHeader, ResultBadge, RiskBadge, SkeletonRows, buttonClass } from "../components/ui";
 import { fmtDate, fmtMs } from "../lib/format";
 import { ORIGIN } from "../lib/labels";
 
@@ -18,9 +18,11 @@ export default function History() {
   const [risk, setRisk] = useState("");
   const [q, setQ] = useState("");
   const [offset, setOffset] = useState(0);
+  const search = useDeferredValue(q.trim());
+  useEffect(() => { setOffset(0); }, [bankId]);
   const query = useQuery({
-    queryKey: ["history", bankId, status, mode, risk, q, offset],
-    queryFn: () => api.history({ bank_id: bankId, status, mode, risk, q, limit: LIMIT, offset }),
+    queryKey: ["history", bankId, status, mode, risk, search, offset],
+    queryFn: () => api.history({ bank_id: bankId, status, mode, risk, q: search, limit: LIMIT, offset }),
     enabled: !!bankId, placeholderData: keepPreviousData,
   });
   const reset = (fn: () => void) => { fn(); setOffset(0); };
@@ -50,31 +52,44 @@ export default function History() {
       {query.isLoading && <SkeletonRows rows={6} />}
       {d && d.items.length === 0 && (
         <EmptyState title={status || mode || risk || q ? "Ничего не найдено" : "История пуста"} description={status || mode || risk || q ? "Измените фильтры." : "Запустите проверку в AI Workspace."}
-          action={<Link to="/app/workspace"><Button size="sm">Открыть Workspace</Button></Link>} />
+          action={<Link to="/app/workspace" className={buttonClass("primary", "sm")}>Открыть Workspace</Link>} />
       )}
       {d && d.items.length > 0 && (
         <Card className="overflow-hidden">
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[820px] text-left text-[13px]">
-              <thead className="bg-ink-50/80"><tr className="label-mono">
-                <th className="px-4 py-2.5 font-normal">Дата</th><th className="px-4 py-2.5 font-normal">Вопрос</th><th className="px-4 py-2.5 font-normal">Продукт</th>
-                <th className="px-4 py-2.5 font-normal">Режим / источник</th><th className="px-4 py-2.5 font-normal">Риск</th><th className="px-4 py-2.5 font-normal">Статус</th><th className="px-4 py-2.5 text-right font-normal">Время</th>
-              </tr></thead>
-              <tbody>
-                {d.items.map((r) => (
-                  <tr key={r.id} onClick={() => nav(`/app/runs/${r.id}`)} className="cursor-pointer border-t hairline transition-colors hover:bg-brand-50/40">
-                    <td className="whitespace-nowrap px-4 py-3 font-mono text-[12px] text-ink-500">{fmtDate(r.created_at, true)}</td>
-                    <td className="max-w-[320px] px-4 py-3"><Link to={`/app/runs/${r.id}`} className="line-clamp-2 font-medium text-ink-900 hover:text-brand-700" onClick={(e) => e.stopPropagation()}>{r.question}</Link></td>
-                    <td className="px-4 py-3 text-ink-600">{r.product_name ?? "—"}</td>
-                    <td className="px-4 py-3"><Badge tone={r.mode === "demo" ? "warn" : "info"} mono>{r.mode.toUpperCase()}</Badge><div className="mt-1 text-[11px] text-ink-500">{r.provider ? `${r.provider} · ${r.model}` : ORIGIN[r.answer_origin]}</div></td>
-                    <td className="px-4 py-3"><RiskBadge risk={r.max_risk} /></td>
-                    <td className="px-4 py-3"><ResultBadge status={r.result_status} /></td>
-                    <td className="px-4 py-3 text-right font-mono text-[12px] text-ink-500">{fmtMs(r.duration_ms)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+          {/* Phones: stacked rows instead of a sideways-scrolling table. */}
+          <ul className="md:hidden">
+            {d.items.map((r) => (
+              <li key={r.id} className="border-t hairline first:border-t-0">
+                <Link to={`/app/runs/${r.id}`} className="block px-4 py-3.5 transition-colors active:bg-ink-50">
+                  <div className="flex items-center justify-between gap-2 font-mono text-[11px] text-ink-500"><span>{fmtDate(r.created_at, true)}</span><span>{fmtMs(r.duration_ms)}</span></div>
+                  <div className="mt-1 line-clamp-2 text-[14px] font-medium text-ink-900">{r.question}</div>
+                  {r.product_name && <div className="mt-0.5 truncate text-[12px] text-ink-500">{r.product_name}</div>}
+                  <div className="mt-2 flex flex-wrap gap-1.5"><Badge tone={r.mode === "demo" ? "warn" : "info"} mono>{r.mode.toUpperCase()}</Badge><RiskBadge risk={r.max_risk} /><ResultBadge status={r.result_status} /></div>
+                </Link>
+              </li>
+            ))}
+          </ul>
+          <table className="hidden w-full table-fixed text-left text-[13px] md:table">
+            <thead className="bg-ink-50/80"><tr className="label-mono">
+              <th className="w-[108px] px-4 py-2.5 font-normal">Дата</th><th className="px-4 py-2.5 font-normal">Вопрос</th>
+              <th className="w-[170px] px-4 py-2.5 font-normal">Режим / источник</th><th className="w-[104px] px-4 py-2.5 font-normal">Риск</th><th className="w-[136px] px-4 py-2.5 font-normal">Статус</th><th className="hidden w-[76px] px-4 py-2.5 text-right font-normal xl:table-cell">Время</th>
+            </tr></thead>
+            <tbody>
+              {d.items.map((r) => (
+                <tr key={r.id} onClick={() => nav(`/app/runs/${r.id}`)} className="cursor-pointer border-t hairline transition-colors hover:bg-brand-50/40">
+                  <td className="px-4 py-3 font-mono text-[12px] text-ink-500">{fmtDate(r.created_at, true)}</td>
+                  <td className="px-4 py-3">
+                    <Link to={`/app/runs/${r.id}`} className="line-clamp-2 font-medium text-ink-900 hover:text-brand-700" onClick={(e) => e.stopPropagation()}>{r.question}</Link>
+                    {r.product_name && <div className="mt-0.5 truncate text-[12px] text-ink-500">{r.product_name}</div>}
+                  </td>
+                  <td className="px-4 py-3"><Badge tone={r.mode === "demo" ? "warn" : "info"} mono>{r.mode.toUpperCase()}</Badge><div className="mt-1 truncate text-[11px] text-ink-500" title={r.provider ? `${r.provider} · ${r.model}` : undefined}>{r.provider ? `${r.provider} · ${r.model}` : ORIGIN[r.answer_origin]}</div></td>
+                  <td className="px-4 py-3"><RiskBadge risk={r.max_risk} /></td>
+                  <td className="px-4 py-3"><ResultBadge status={r.result_status} /></td>
+                  <td className="hidden px-4 py-3 text-right font-mono text-[12px] text-ink-500 xl:table-cell">{fmtMs(r.duration_ms)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
           <div className="flex items-center justify-between border-t hairline px-4 py-2.5 text-[12px] text-ink-500">
             <span>{d.offset + 1}–{d.offset + d.items.length} из {d.total}</span>
             <div className="flex gap-1">
